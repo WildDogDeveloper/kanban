@@ -1,0 +1,91 @@
+# 部署指南
+
+一台 Linux 云主机即可（1C1G 足够；阿里云/腾讯云轻量服务器、ECS 都行，Ubuntu 22.04 / Debian 12）。
+**IP 直接访问，不需要域名、不需要 Docker**。全部数据在 `kanban.db` 一个文件里，**备份 = 复制这个文件**。
+
+## 1. 服务器装 Node
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+apt-get update && apt-get install -y nodejs
+node -v    # 需要 >= 22.5（内置 node:sqlite，零 npm 依赖）
+```
+
+## 2. 传代码（本地执行）
+
+```bash
+ssh root@<服务器IP> "mkdir -p /opt/kanban"
+
+# 方式 A：scp（node_modules 和 kanban.db 不用传）
+scp -r index.html server.js backup.js css js root@<服务器IP>:/opt/kanban/
+
+# 方式 B：git 私有仓库（以后更新方便）
+#   本地：git init && git add -A && git commit -m init && git push
+#   服务器：git clone <仓库地址> /opt/kanban
+```
+
+## 3. 运行
+
+```bash
+cd /opt/kanban
+PORT=8787 nohup node server.js > kanban.log 2>&1 &
+```
+
+## 4. 开机自启（systemd，建议）
+
+```bash
+cat > /etc/systemd/system/kanban.service <<'EOF'
+[Unit]
+Description=Kanban Board
+After=network.target
+
+[Service]
+Environment=PORT=8787
+ExecStart=/usr/bin/node /opt/kanban/server.js
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload && systemctl enable --now kanban
+```
+
+## 5. 访问
+
+- 云主机安全组/防火墙放行 **8787**（TCP）
+- 浏览器打开 `http://<服务器IP>:8787/`
+- 手机/平板/其他电脑，访问同一个地址即可，数据都在服务器上
+
+## 日常运维
+
+```bash
+systemctl status kanban        # 看状态
+journalctl -u kanban -f        # 看日志
+systemctl restart kanban       # 重启
+```
+
+## 备份
+
+```bash
+mkdir -p /opt/backup && crontab -e
+# 每天凌晨 3 点备份（VACUUM INTO 在线一致性备份，比直接 cp 运行中的库安全）：
+0 3 * * * node /opt/kanban/backup.js /opt/backup/kanban-$(date +\%F).db
+```
+
+平时也可以用页面右上角「导出」按钮下载 JSON 备份，「导入」可恢复。
+
+## 更新代码
+
+```bash
+cd /opt/kanban
+git pull          # 或重新 scp 覆盖
+systemctl restart kanban
+```
+
+数据在 `kanban.db`，更新代码不会丢。
+
+## 安全提醒
+
+- 服务**无认证**：能访问到 IP+端口的人即可查看和修改看板，只在可信网络使用
+- IP 直连是 HTTP 明文（无域名就没有 HTTPS）；以后想上域名 + HTTPS，加一层 nginx + certbot 反代即可，应用本身不用改
+- 只开必要端口（8787），SSH 建议密钥登录

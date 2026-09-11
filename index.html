@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>任务看板</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='5' width='7' height='22' rx='2' fill='%234f6ef7'/%3E%3Crect x='12.5' y='5' width='7' height='15' rx='2' fill='%238b9cf9'/%3E%3Crect x='22' y='5' width='7' height='9' rx='2' fill='%23c3cdf9'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <h1>任务看板</h1>
+    </div>
+    <div class="topbar-actions">
+      <span id="conn" class="conn off">…</span>
+      <button id="discarded-btn" class="btn" title="查看废弃任务">废弃 <span id="disc-count">0</span></button>
+      <button id="export-btn" class="btn" title="导出 JSON 备份">导出</button>
+      <button id="import-btn" class="btn" title="从 JSON 备份导入">导入</button>
+      <input type="file" id="import-file" accept=".json,application/json" hidden>
+    </div>
+  </header>
+
+  <main id="board" class="board"></main>
+
+  <div id="backdrop" class="backdrop"></div>
+
+  <aside id="detail" class="detail" aria-label="任务详情">
+    <div class="detail-header">
+      <h2>任务详情</h2>
+      <button id="d-close" class="icon-btn" title="关闭 (Esc)">&times;</button>
+    </div>
+    <div class="detail-body-wrap">
+      <div class="detail-body">
+      <input id="d-title" class="d-title" placeholder="任务标题" maxlength="200" autocomplete="off">
+      <div id="d-created" class="d-created"></div>
+      <textarea id="d-desc" class="d-desc" placeholder="描述…" rows="4"></textarea>
+      <div class="d-grid">
+        <label class="d-field">
+          <span>截止日期</span>
+          <input type="date" id="d-due">
+        </label>
+        <label class="d-field">
+          <span>优先级</span>
+          <select id="d-priority">
+            <option value="none">无</option>
+            <option value="low">低</option>
+            <option value="medium">中</option>
+            <option value="high">高</option>
+          </select>
+        </label>
+      </div>
+      <label class="d-field">
+        <span>标签（用逗号分隔）</span>
+        <input id="d-tags" placeholder="例如：工作, 紧急" autocomplete="off">
+      </label>
+      <div class="d-subtasks">
+        <div class="d-subtasks-head">
+          <h3>子项</h3>
+          <span id="d-progress" class="d-progress-text">0/0</span>
+        </div>
+        <div class="d-progress-track"><i id="d-progress-bar"></i></div>
+        <ul id="d-subtask-list" class="subtask-list d-list"></ul>
+        <input id="d-subtask-add" class="subtask-add-input" placeholder="＋ 添加子项，回车确认" maxlength="200" autocomplete="off">
+      </div>
+      </div>
+    </div>
+    <div class="detail-footer">
+      <button id="d-discard" class="btn secondary">废弃任务</button>
+      <button id="d-delete" class="btn danger">删除任务</button>
+    </div>
+  </aside>
+
+  <aside id="discarded" class="detail" aria-label="废弃任务">
+    <div class="detail-header">
+      <h2>废弃任务</h2>
+      <button id="disc-close" class="icon-btn" title="关闭 (Esc)">&times;</button>
+    </div>
+    <div class="detail-body-wrap">
+      <div class="detail-body">
+      <p class="disc-hint">废弃的任务会从看板隐藏，子项和详情都保留。可以恢复到原来的列，或彻底删除。</p>
+      <div id="disc-list"></div>
+      </div>
+    </div>
+  </aside>
+
+  <script src="js/sortable.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
