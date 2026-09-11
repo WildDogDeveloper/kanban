@@ -202,6 +202,7 @@ function refreshDetailInputs() {
     'd-due': t.dueDate || '',
     'd-priority': t.priority || 'none',
     'd-tags': (t.tags || []).join(', '),
+    'd-completion': t.completionNote || '',
   };
   for (const id of Object.keys(values)) {
     const el = document.getElementById(id);
@@ -225,7 +226,13 @@ function flashConflict() {
 }
 
 function findTask(id) { return state.tasks.find(t => t.id === id); }
-function tasksInColumn(colId) { return state.tasks.filter(t => t.columnId === colId && !t.discarded); }
+function tasksInColumn(colId) {
+  const tasks = state.tasks.filter(t => t.columnId === colId && !t.discarded);
+  const done = state.columns.find(c => c.id === colId)?.title === DONE_TITLE;
+  if (done) tasks.sort((a, b) => (b.completedAt || b.updatedAt) - (a.completedAt || a.updatedAt)); // 已完成列：最新完成在上
+  else tasks.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)); // 其他列：新任务在下面
+  return tasks;
+}
 function progressOf(t) {
   return { total: t.subtasks.length, done: t.subtasks.filter(s => s.done).length };
 }
@@ -275,15 +282,23 @@ function assigneeAvatar(name) {
   return `<i class="assignee-avatar" style="background:${accentFor(name)}">${esc(name.slice(0, 1))}</i>`;
 }
 
+function subMeta(s) {
+  const parts = [];
+  if (s.createdAt) parts.push(`创建于 ${fmtDateTime(s.createdAt)}`);
+  if (s.completedAt) parts.push(`完成于 ${fmtDateTime(s.completedAt)}`);
+  return parts.join(' · ');
+}
+
 function subHTML(s) {
   const a = s.assignee
     ? `<span class="sub-assignee" title="负责人：${esc(s.assignee)}">${assigneeAvatar(s.assignee)}<span class="sa-name">${esc(s.assignee)}</span></span>`
     : '';
+  const meta = subMeta(s);
   return `<li class="subtask-row${s.done ? ' done' : ''}" data-id="${s.id}">
     <label class="subtask-check-wrap">
       <input type="checkbox" class="subtask-check"${s.done ? ' checked' : ''}>
     </label>
-    <span class="subtask-title" data-full="${esc(s.title)}">${esc(s.title)}</span>
+    <span class="subtask-title" data-full="${esc(s.title)}"${meta ? ` data-meta="${esc(meta)}"` : ''}>${esc(s.title)}</span>
     ${a}
     <button class="subtask-more" title="分配 / 更多">⋯</button>
     <button class="subtask-del" title="删除子项">×</button>
@@ -302,6 +317,12 @@ function cardHTML(t) {
   const assignee = t.assignee
     ? `<span class="chip chip-assignee" title="负责人：${esc(t.assignee)}">${assigneeAvatar(t.assignee)}${esc(t.assignee)}</span>`
     : '';
+  const created = t.createdAt
+    ? `<span class="chip chip-created" title="创建于 ${fmtDateTime(t.createdAt)}">创建 ${fmtDate(new Date(t.createdAt).toISOString().slice(0, 10))}</span>`
+    : '';
+  const completion = (t.completionNote || '').trim()
+    ? `<p class="task-completion">${esc(t.completionNote.trim())}</p>`
+    : '';
   const tags = (t.tags || []).map(tag => `<span class="chip chip-tag">${esc(tag)}</span>`).join('');
   return `<article class="task-card" data-id="${t.id}">
     <div class="card-top">
@@ -310,7 +331,8 @@ function cardHTML(t) {
       <button class="card-more" title="分配 / 更多">⋯</button>
     </div>
     ${t.description ? `<p class="task-desc">${esc(t.description)}</p>` : ''}
-    ${pri || due || assignee ? `<div class="card-chips">${pri}${due}${assignee}</div>` : ''}
+    ${completion}
+    ${pri || due || assignee || created ? `<div class="card-chips">${pri}${due}${assignee}${created}</div>` : ''}
     ${t.subtasks.length ? `<div class="subtask-wrap"><ul class="subtask-list">${t.subtasks.map(subHTML).join('')}</ul></div>` : ''}
     ${p.total ? `<div class="card-progress"><div class="progress-bar"><i style="width:${pct}%"></i></div><span class="progress-text">${p.done}/${p.total}</span></div>` : ''}
     ${tags ? `<div class="card-tags">${tags}</div>` : ''}
@@ -428,6 +450,9 @@ function onTaskMove(evt) {
   const colId = colEl.dataset.id;
   task.columnId = colId;
   task.updatedAt = Date.now();
+  const isDone = state.columns.find(c => c.id === colId)?.title === DONE_TITLE;
+  if (isDone) task.completedAt = Date.now();
+  else delete task.completedAt;
   const order = [...evt.to.querySelectorAll('.task-card')].map(el => el.dataset.id);
   const rendered = order.map(findTask).filter(Boolean);
   const hidden = state.tasks.filter(t => t.columnId === colId && !order.includes(t.id));
@@ -495,7 +520,7 @@ function addTask(colId, title) {
   const t = {
     id: uid(), columnId: colId, title,
     description: '', dueDate: '', priority: 'none', tags: [],
-    assignee: '',
+    assignee: '', completionNote: '',
     createdAt: now, updatedAt: now, subtasks: [],
   };
   const colTasks = state.tasks.filter(x => x.columnId === colId);
@@ -507,7 +532,7 @@ function addTask(colId, title) {
 function addSubtask(taskId, title) {
   const t = findTask(taskId);
   if (!t) return;
-  const sub = { id: uid(), title, done: false, assignee: '' };
+  const sub = { id: uid(), title, done: false, assignee: '', createdAt: Date.now() };
   const firstDone = t.subtasks.findIndex(s => s.done);
   if (firstDone >= 0) t.subtasks.splice(firstDone, 0, sub); // 新子项上浮到已完成子项之上
   else t.subtasks.push(sub);
@@ -520,6 +545,8 @@ function toggleSubtask(subId, done) {
   const f = findSubtask(subId);
   if (!f) return;
   f.sub.done = done;
+  if (done) f.sub.completedAt = Date.now();
+  else delete f.sub.completedAt;
   const arr = f.task.subtasks;
   const i = arr.indexOf(f.sub);
   if (i >= 0) {
@@ -579,6 +606,7 @@ function restoreTask(taskId) {
   t.discarded = false;
   delete t.discardedAt;
   if (!state.columns.find(c => c.id === t.columnId) && state.columns[0]) t.columnId = state.columns[0].id;
+  if (state.columns.find(c => c.id === t.columnId)?.title === DONE_TITLE && !t.completedAt) t.completedAt = Date.now();
   t.updatedAt = Date.now();
   visibleCounts[t.columnId] = Math.max(visibleCounts[t.columnId] || PAGE_SIZE, tasksInColumn(t.columnId).length);
   save();
@@ -647,6 +675,7 @@ function openDetail(taskId) {
   document.getElementById('d-due').value = t.dueDate || '';
   document.getElementById('d-priority').value = t.priority || 'none';
   document.getElementById('d-tags').value = (t.tags || []).join(', ');
+  document.getElementById('d-completion').value = t.completionNote || '';
   renderDetailSubtasks();
   discardedEl.classList.remove('open');
   detailEl.classList.add('open');
@@ -669,8 +698,10 @@ tipEl.className = 'text-tip';
 document.body.appendChild(tipEl);
 
 function showTip(el) {
-  if (el.scrollWidth <= el.clientWidth + 1) return; // 未截断不提示
-  tipEl.textContent = el.dataset.full || el.textContent;
+  const full = el.dataset.full || el.textContent;
+  const meta = el.dataset.meta || '';
+  if (el.scrollWidth <= el.clientWidth + 1 && !meta) return; // 未截断且无时间信息
+  tipEl.innerHTML = `<div class="tip-title">${esc(full)}</div>${meta ? `<div class="tip-meta">${esc(meta)}</div>` : ''}`;
   tipEl.classList.add('show');
   const r = el.getBoundingClientRect();
   const tw = tipEl.offsetWidth, th = tipEl.offsetHeight;
@@ -1046,6 +1077,30 @@ document.getElementById('d-tags').addEventListener('change', e => {
   render();
 });
 
+document.getElementById('d-completion').addEventListener('input', e => {
+  const t = findTask(openTaskId);
+  if (!t) return;
+  t.completionNote = e.target.value;
+  t.updatedAt = Date.now();
+  save();
+  const card = boardEl.querySelector(`.task-card[data-id="${openTaskId}"]`);
+  if (card) {
+    const val = t.completionNote.trim();
+    let el = card.querySelector('.task-completion');
+    if (val) {
+      if (!el) {
+        el = document.createElement('p');
+        el.className = 'task-completion';
+        (card.querySelector('.task-desc') || card.querySelector('.card-top')).after(el);
+      }
+      el.textContent = val;
+    } else if (el) {
+      el.remove();
+    }
+  }
+  updateScrollFades();
+});
+
 document.getElementById('d-subtask-add').addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
   const v = e.target.value.trim();
@@ -1119,12 +1174,16 @@ function normalizeImportedState(s) {
     t.dueDate = typeof t.dueDate === 'string' ? t.dueDate : '';
     t.priority = ['none', 'low', 'medium', 'high'].includes(t.priority) ? t.priority : 'none';
     t.assignee = typeof t.assignee === 'string' ? t.assignee : '';
+    t.completionNote = typeof t.completionNote === 'string' ? t.completionNote : '';
     t.tags = Array.isArray(t.tags) ? t.tags.filter(x => typeof x === 'string') : [];
     t.createdAt = Number.isFinite(t.createdAt) ? t.createdAt : Date.now();
     t.updatedAt = Number.isFinite(t.updatedAt) ? t.updatedAt : t.createdAt;
+    t.completedAt = Number.isFinite(t.completedAt) ? t.completedAt : null;
     t.subtasks = t.subtasks.map(st => ({
       id: st.id, title: st.title, done: !!st.done,
       assignee: typeof st.assignee === 'string' ? st.assignee : '',
+      createdAt: Number.isFinite(st.createdAt) ? st.createdAt : null,
+      completedAt: Number.isFinite(st.completedAt) ? st.completedAt : null,
     }));
   }
   s.assignees = Array.isArray(s.assignees) ? s.assignees.filter(x => typeof x === 'string') : [];
