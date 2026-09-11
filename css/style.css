@@ -729,15 +729,25 @@ body {
   outline: none;
 }
 .ctx-input:focus { border-color: var(--accent); }
-.ctx-suggests { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 4px 2px; }
-.ctx-suggest {
-  border: 1px solid var(--border);
-  background: #f6f7fa;
-  border-radius: 999px;
-  font-size: 12px;
+.ctx-suggest-list {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 168px;
+  overflow-y: auto;
+  margin-top: 6px;
+}
+.ctx-suggest-list.show { display: flex; }
+.ctx-suggest-item {
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 13px;
   font-family: inherit;
   color: var(--text);
-  padding: 3px 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
   cursor: pointer;
 }
-.ctx-suggest:hover { border-color: var(--accent); color: var(--accent); background: #fff; }
+.ctx-suggest-item:hover,
+.ctx-suggest-item.active { background: var(--accent-soft); color: var(--accent); }

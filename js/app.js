@@ -52,6 +52,7 @@ function defaultState() {
         ],
       },
     ],
+    assignees: [],
   };
 }
 
@@ -703,14 +704,22 @@ document.body.appendChild(ctxMenu);
 
 let ctxTarget = null; // { kind: 'task' | 'sub', id, item, task }
 let ctxPos = { x: 0, y: 0 };
+let ctxSuggest = null; // { all: string[], matched: string[], active: number }
 
-function allAssignees() {
-  const names = new Set();
+/* 记住用过的姓名（state.assignees 历史 + 当前仍在用的人），清空分配后依然可推荐 */
+function knownAssignees() {
+  const names = new Set(Array.isArray(state.assignees) ? state.assignees : []);
   for (const t of state.tasks) {
     if (t.assignee) names.add(t.assignee);
     for (const s of t.subtasks) if (s.assignee) names.add(s.assignee);
   }
   return [...names].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+}
+
+function rememberAssignee(name) {
+  if (!name) return;
+  if (!Array.isArray(state.assignees)) state.assignees = [];
+  if (!state.assignees.includes(name)) state.assignees.push(name);
 }
 
 function getAssignTarget(kind, id) {
@@ -733,6 +742,7 @@ function positionFixed(el, x, y) {
 
 function closeAssignMenu() {
   ctxTarget = null;
+  ctxSuggest = null;
   ctxMenu.classList.remove('open');
 }
 
@@ -750,25 +760,73 @@ function showAssignMenu(x, y, target) {
 function showAssignInput() {
   const target = ctxTarget;
   if (!target) return;
-  const names = allAssignees();
   ctxMenu.innerHTML = `
     <div class="ctx-label">分配给（留空即清除）</div>
     <input id="ctx-assign-input" class="ctx-input" placeholder="输入姓名，回车确认" maxlength="30" value="${esc(target.item.assignee || '')}">
-    ${names.length ? `<div class="ctx-suggests">${names.slice(0, 8).map(n => `<button class="ctx-suggest" data-name="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
+    <div class="ctx-suggest-list" id="ctx-suggest-list"></div>
   `;
   ctxMenu.classList.add('open');
+  ctxSuggest = { all: knownAssignees(), matched: [], active: -1 };
+  renderSuggestList();
   positionFixed(ctxMenu, ctxPos.x, ctxPos.y);
   const input = ctxMenu.querySelector('#ctx-assign-input');
   input.focus();
   input.select();
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') applyAssignee(input.value);
+  input.addEventListener('input', () => {
+    if (!ctxSuggest) return;
+    ctxSuggest.active = -1;
+    renderSuggestList();
+    positionFixed(ctxMenu, ctxPos.x, ctxPos.y);
   });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (ctxSuggest && ctxSuggest.active >= 0) applyAssignee(ctxSuggest.matched[ctxSuggest.active]);
+      else applyAssignee(input.value);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!ctxSuggest || !ctxSuggest.matched.length) return;
+      e.preventDefault();
+      const n = ctxSuggest.matched.length;
+      ctxSuggest.active = e.key === 'ArrowDown'
+        ? (ctxSuggest.active + 1) % n
+        : (ctxSuggest.active - 1 + n) % n;
+      paintSuggestActive();
+    }
+  });
+}
+
+/* 按输入内容过滤建议（子串匹配，忽略大小写）；空输入显示全部记住的姓名 */
+function renderSuggestList() {
+  if (!ctxSuggest) return;
+  const listEl = ctxMenu.querySelector('#ctx-suggest-list');
+  const input = ctxMenu.querySelector('#ctx-assign-input');
+  if (!listEl || !input) return;
+  const q = input.value.trim().toLowerCase();
+  ctxSuggest.matched = (q ? ctxSuggest.all.filter(n => n.toLowerCase().includes(q)) : ctxSuggest.all).slice(0, 12);
+  if (!ctxSuggest.matched.length) {
+    listEl.classList.remove('show');
+    listEl.innerHTML = '';
+    return;
+  }
+  listEl.classList.add('show');
+  listEl.innerHTML = ctxSuggest.matched.map((n, i) =>
+    `<button class="ctx-suggest-item${i === ctxSuggest.active ? ' active' : ''}" data-name="${esc(n)}">${esc(n)}</button>`
+  ).join('');
+}
+
+function paintSuggestActive() {
+  if (!ctxSuggest) return;
+  const items = [...ctxMenu.querySelectorAll('.ctx-suggest-item')];
+  items.forEach((el, i) => el.classList.toggle('active', i === ctxSuggest.active));
+  const act = items[ctxSuggest.active];
+  if (act) act.scrollIntoView({ block: 'nearest' });
 }
 
 function applyAssignee(name) {
   if (!ctxTarget) return;
-  ctxTarget.item.assignee = String(name || '').trim().slice(0, 30);
+  const v = String(name || '').trim().slice(0, 30);
+  ctxTarget.item.assignee = v;
+  if (v) rememberAssignee(v);
   ctxTarget.task.updatedAt = Date.now();
   closeAssignMenu();
   save();
@@ -783,7 +841,7 @@ ctxMenu.addEventListener('click', e => {
     else if (item.dataset.act === 'clear') applyAssignee('');
     return;
   }
-  const sug = e.target.closest('.ctx-suggest');
+  const sug = e.target.closest('.ctx-suggest-item');
   if (sug) applyAssignee(sug.dataset.name);
 });
 
@@ -1069,6 +1127,7 @@ function normalizeImportedState(s) {
       assignee: typeof st.assignee === 'string' ? st.assignee : '',
     }));
   }
+  s.assignees = Array.isArray(s.assignees) ? s.assignees.filter(x => typeof x === 'string') : [];
   return s;
 }
 
