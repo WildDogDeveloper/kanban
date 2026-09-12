@@ -12,18 +12,31 @@
 - **访问**：`http://108.186.246.232:8787/`
 - **数据**：`/opt/kanban/kanban.db`（备份 = 复制此文件）
 
-### 更新代码（scp 覆盖 + 重启，本地执行）
+### 更新代码（本地执行：上库 → scp → 重启 → 验证）
 
-```bash
-cd <本地 kanban 仓库目录>
-# 只传改动的文件（示例：前端改动）
-scp -o StrictHostKeyChecking=accept-new css/style.css root@108.186.246.232:/opt/kanban/css/style.css
-scp -o StrictHostKeyChecking=accept-new js/app.js    root@108.186.246.232:/opt/kanban/js/app.js
-# 或整目录覆盖：scp -o StrictHostKeyChecking=accept-new index.html server.js backup.js css js root@108.186.246.232:/opt/kanban/
+1. **本地改完代码，先上库**（在仓库目录 `D:/AI/kanban`）：
+   ```bash
+   cd /d/AI/kanban
+   git add -A && git commit -m "改动说明" && git push origin main
+   ```
 
-# 重启并确认
-ssh root@108.186.246.232 "systemctl restart kanban && systemctl is-active kanban && curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:8787/"
-```
+2. **传改动文件到服务器**（只传改动的即可；全量覆盖也行）：
+   ```bash
+   # 只传改动文件（示例：前端改动）
+   scp -o StrictHostKeyChecking=accept-new css/style.css root@108.186.246.232:/opt/kanban/css/style.css
+   scp -o StrictHostKeyChecking=accept-new js/app.js    root@108.186.246.232:/opt/kanban/js/app.js
+   # 全量覆盖（改了 server.js/index.html 等时用这条）
+   scp -o StrictHostKeyChecking=accept-new index.html server.js backup.js css js root@108.186.246.232:/opt/kanban/
+   ```
+
+3. **重启服务并确认**（期望输出 `active` + `HTTP 200`）：
+   ```bash
+   ssh root@108.186.246.232 "systemctl restart kanban && systemctl is-active kanban && curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:8787/"
+   ```
+
+4. **浏览器验证**：打开 `http://108.186.246.232:8787/`，**强制刷新**（`Ctrl+Shift+R`）清掉旧的 JS/CSS 缓存。
+
+> 数据在 `/opt/kanban/kanban.db`，更新代码不影响数据。
 
 > 安全提醒：登录密码/密钥请勿提交到仓库；密码在 VPS 控制台（tianliyun.cn）管理。
 
