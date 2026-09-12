@@ -11,6 +11,7 @@
   --radius: 10px;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
   --shadow-hover: 0 4px 12px rgba(16, 24, 40, 0.12);
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 * { box-sizing: border-box; }
@@ -79,6 +80,20 @@ body {
   transition: background 0.12s, color 0.12s;
 }
 .search-clear:hover { background: #e8eaf0; color: var(--text); }
+.search-kbd {
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 2px 5px;
+  flex-shrink: 0;
+  pointer-events: none;
+  user-select: none;
+}
 .search-panel {
   position: absolute;
   top: calc(100% + 6px);
@@ -93,6 +108,11 @@ body {
   box-shadow: var(--shadow-hover);
   z-index: 60;
   padding: 6px;
+}
+.search-panel:not([hidden]) { animation: panelIn 0.12s var(--ease-out); }
+@keyframes panelIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
 }
 .search-count { font-size: 12px; color: var(--text-dim); padding: 4px 8px 6px; }
 .search-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 7px; cursor: pointer; }
@@ -161,9 +181,9 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
 .col-header { display: flex; align-items: center; gap: 8px; padding: 2px 4px; cursor: grab; }
 .col-done-icon { width: 16px; height: 16px; border-radius: 50%; background: var(--col-accent); color: #fff; font-size: 10px; font-weight: 700; display: grid; place-content: center; flex-shrink: 0; }
 .col-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.col-title { font-weight: 700; font-size: 14px; }
+.col-title { font-weight: 700; font-size: 15px; letter-spacing: 0.3px; }
 .col-count {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-dim);
   background: rgba(255, 255, 255, 0.8);
   padding: 1px 9px;
@@ -231,7 +251,8 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
   padding: 8px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.12s ease;
+  transform: translateY(4px);
+  transition: opacity 0.12s var(--ease-out), transform 0.12s var(--ease-out);
 }
 .col-nav-panel::before {
   content: '';
@@ -241,7 +262,7 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
   right: 0;
   height: 6px;
 }
-.col-nav-wrap.open .col-nav-panel { opacity: 1; pointer-events: auto; }
+.col-nav-wrap.open .col-nav-panel { opacity: 1; pointer-events: auto; transform: none; }
 .col-nav-filter {
   flex-shrink: 0;
   margin-bottom: 6px;
@@ -271,6 +292,9 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
 .col-nav-item:hover { background: var(--accent-soft); color: var(--accent); }
 .col-nav-top { color: var(--accent); background: var(--accent-soft); }
 .col-nav-empty { font-size: 12px; color: var(--text-dim); padding: 6px 8px; }
+.col-nav-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.col-nav-dot.done { background: #10b981; }
+.col-nav-dot.part { background: #b6bcc9; }
 
 .task-list {
   display: flex;
@@ -289,6 +313,10 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
   text-align: center;
   color: #a0a6b5;
   font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
 }
 
 /* ---------- task card ---------- */
@@ -939,3 +967,8 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
 }
 .ctx-suggest-item:hover,
 .ctx-suggest-item.active { background: var(--accent-soft); color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .search-panel:not([hidden]) { animation: none; }
+  .col-nav-panel { transition: none; transform: none; }
+}

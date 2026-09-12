@@ -271,6 +271,7 @@ const backdropEl = document.getElementById('backdrop');
 const searchInput = document.getElementById('search');
 const searchPanel = document.getElementById('search-panel');
 const searchClearBtn = document.getElementById('search-clear');
+const searchKbd = document.getElementById('search-kbd');
 
 let sortables = [];
 let openTaskId = null;
@@ -356,7 +357,9 @@ function closeSearchPanel() {
 }
 
 function syncSearchClearBtn() {
-  searchClearBtn.hidden = !searchInput.value;
+  const hasText = !!searchInput.value;
+  searchClearBtn.hidden = !hasText;
+  searchKbd.hidden = hasText;
 }
 
 function clearSearch() {
@@ -463,7 +466,11 @@ function columnHTML(col, idx) {
       <input class="col-nav-filter" placeholder="筛选本列任务…" maxlength="50" autocomplete="off">
       <ul class="col-nav-list">
         <li class="col-nav-item col-nav-top" data-top="1">↑ 回到列顶部</li>
-        ${tasks.map(t => `<li class="col-nav-item" data-id="${t.id}" data-full="${esc(t.title)}">${esc(t.title)}</li>`).join('')}
+        ${tasks.map(t => {
+          const p = progressOf(t);
+          const dot = p.total === 0 ? '' : p.done === p.total ? '<span class="col-nav-dot done"></span>' : '<span class="col-nav-dot part"></span>';
+          return `<li class="col-nav-item" data-id="${t.id}" data-full="${esc(t.title)}">${dot}${esc(t.title)}</li>`;
+        }).join('')}
         <li class="col-nav-empty" hidden>没有匹配的任务</li>
       </ul>
     </div>
@@ -477,7 +484,7 @@ function columnHTML(col, idx) {
       ${del}
     </header>
     <input class="task-add-input" placeholder="＋ 添加任务，回车确认" maxlength="200">
-    <div class="task-list" data-col="${col.id}">${shown.map((t, i) => cardHTML(t, i)).join('') || '<div class="empty-hint">拖拽任务到这里</div>'}</div>
+    <div class="task-list" data-col="${col.id}">${shown.map((t, i) => cardHTML(t, i)).join('') || '<div class="empty-hint"><svg class="empty-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>暂无任务，拖拽或输入添加</div>'}</div>
     ${hidden > 0 ? `<button class="load-more" data-col="${col.id}">还有 ${hidden} 个任务</button>` : ''}
   </section>`;
 }
