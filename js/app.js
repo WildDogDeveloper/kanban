@@ -268,6 +268,8 @@ const boardEl = document.getElementById('board');
 const detailEl = document.getElementById('detail');
 const discardedEl = document.getElementById('discarded');
 const backdropEl = document.getElementById('backdrop');
+const searchInput = document.getElementById('search');
+const searchPanel = document.getElementById('search-panel');
 
 let sortables = [];
 let openTaskId = null;
@@ -277,6 +279,87 @@ const visibleCounts = {}; // columnId -> 已渲染任务数
 function markDragged() {
   justDragged = true;
   setTimeout(() => { justDragged = false; }, 80);
+}
+
+/* ================= 任务检索 ================= */
+
+let searchResults = []; // [{ t, col }]
+let searchActive = -1;
+
+/* 高亮文本中每个词的所有出现位置（忽略大小写） */
+function highlightHTML(text, words) {
+  if (!words.length) return esc(text);
+  const lower = String(text).toLowerCase();
+  const ranges = [];
+  for (const w of words) {
+    let i = lower.indexOf(w);
+    while (i !== -1) {
+      ranges.push([i, i + w.length]);
+      i = lower.indexOf(w, i + w.length);
+    }
+  }
+  if (!ranges.length) return esc(text);
+  ranges.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const r of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+    else merged.push([r[0], r[1]]);
+  }
+  let out = '';
+  let pos = 0;
+  for (const [s, e] of merged) {
+    out += esc(text.slice(pos, s)) + '<mark>' + esc(text.slice(s, e)) + '</mark>';
+    pos = e;
+  }
+  return out + esc(text.slice(pos));
+}
+
+function runSearch() {
+  const q = searchInput.value.trim().toLowerCase();
+  if (!q) { closeSearchPanel(); return; }
+  const words = q.split(/\s+/);
+  searchResults = [];
+  for (const col of state.columns) {
+    for (const t of tasksInColumn(col.id)) {
+      const hay = [t.title, t.description, t.assignee, ...(t.tags || [])].filter(Boolean).join('\n').toLowerCase();
+      if (words.every(w => hay.includes(w))) searchResults.push({ t, col });
+    }
+  }
+  searchActive = searchResults.length ? 0 : -1;
+  renderSearchPanel();
+}
+
+function renderSearchPanel() {
+  const q = searchInput.value.trim();
+  if (!q) { searchPanel.hidden = true; return; }
+  const words = q.toLowerCase().split(/\s+/);
+  const shown = searchResults.slice(0, 100);
+  const rows = shown.map((r, i) => {
+    const accent = r.col.title === DONE_TITLE ? DONE_ACCENT : ACCENTS[state.columns.indexOf(r.col) % ACCENTS.length];
+    return `<li class="search-item${i === searchActive ? ' active' : ''}" data-col="${r.col.id}" data-id="${r.t.id}">
+      <span class="search-col" style="color:${accent}">${esc(r.col.title)}</span>
+      <span class="search-title">${highlightHTML(r.t.title, words)}</span>
+    </li>`;
+  }).join('');
+  searchPanel.innerHTML =
+    `<div class="search-count">${searchResults.length} 个结果${searchResults.length > shown.length ? `（显示前 ${shown.length} 个）` : ''}</div>` +
+    (rows || '<div class="search-empty">没有匹配的任务</div>');
+  searchPanel.hidden = false;
+}
+
+function closeSearchPanel() {
+  searchPanel.hidden = true;
+  searchResults = [];
+  searchActive = -1;
+}
+
+function jumpToSearchResult(i) {
+  const r = searchResults[i];
+  if (!r) return;
+  searchActive = i;
+  jumpToTask(r.col.id, r.t.id);
+  renderSearchPanel();
 }
 
 /* ================= rendering ================= */
@@ -363,14 +446,17 @@ function columnHTML(col, idx) {
     ? `<span class="col-title">${esc(col.title)}</span>`
     : `<span class="col-title" title="双击重命名">${esc(col.title)}</span>`;
   const del = done ? '' : '<button class="col-del" title="删除列">×</button>';
-  const nav = tasks.length > PAGE_SIZE
-    ? `<div class="col-nav-wrap">
-        <button class="col-nav" title="快速导航">☰</button>
-        <div class="col-nav-panel">
-          <ul class="col-nav-list">${tasks.map(t => `<li class="col-nav-item" data-id="${t.id}" data-full="${esc(t.title)}">${esc(t.title)}</li>`).join('')}</ul>
-        </div>
-       </div>`
-    : '';
+  const nav = `<div class="col-nav-wrap">
+    <button class="col-nav" title="快速导航：跳转任务 / 回顶部">☰</button>
+    <div class="col-nav-panel">
+      <input class="col-nav-filter" placeholder="筛选本列任务…" maxlength="50" autocomplete="off">
+      <ul class="col-nav-list">
+        <li class="col-nav-item col-nav-top" data-top="1">↑ 回到列顶部</li>
+        ${tasks.map(t => `<li class="col-nav-item" data-id="${t.id}" data-full="${esc(t.title)}">${esc(t.title)}</li>`).join('')}
+        <li class="col-nav-empty" hidden>没有匹配的任务</li>
+      </ul>
+    </div>
+   </div>`;
   return `<section class="column${done ? ' column-done' : ''}" data-id="${col.id}" style="--col-accent:${accent}">
     <header class="col-header">
       ${head}
@@ -404,6 +490,12 @@ function render() {
   renderDiscarded();
   initSortables();
   updateScrollFades();
+  updateColNavVisibility();
+  if (activeTaskId) {
+    const el = activeCardEl();
+    if (el) el.classList.add('card-active');
+    else activeTaskId = null;
+  }
 }
 
 function updateScrollFades() {
@@ -510,6 +602,7 @@ function loadMoreTasks(colId) {
     if (hidden > 0) btn.textContent = `还有 ${hidden} 个任务`;
     else btn.remove();
   }
+  updateColNavVisibility();
 }
 
 function flashCard(cardEl) {
@@ -533,6 +626,62 @@ function jumpToTask(colId, taskId) {
   void list?.offsetHeight; // 强制重排，确保新渲染的卡片已布局
   card.scrollIntoView({ behavior: 'auto', block: 'center' });
   flashCard(card);
+}
+
+/* 超长列判定：任务数超过一页，或列内容超出可视高度（卡片多且长） */
+function updateColNavVisibility() {
+  boardEl.querySelectorAll('.column').forEach(colEl => {
+    const list = colEl.querySelector('.task-list');
+    const n = tasksInColumn(colEl.dataset.id).length;
+    const overflow = !!list && list.scrollHeight > list.clientHeight + 40;
+    colEl.classList.toggle('nav-visible', n > PAGE_SIZE || overflow);
+  });
+}
+
+/* ================= 键盘快速导航：↑↓ / j k 在卡片间移动，Enter 打开详情 ================= */
+
+let activeTaskId = null;
+
+function activeCardEl() {
+  return activeTaskId ? boardEl.querySelector(`.task-card[data-id="${activeTaskId}"]`) : null;
+}
+
+function clearActiveCard() {
+  const el = activeCardEl();
+  if (el) el.classList.remove('card-active');
+  activeTaskId = null;
+}
+
+function setActiveCard(taskId) {
+  const prev = activeCardEl();
+  if (prev) prev.classList.remove('card-active');
+  activeTaskId = taskId;
+  const el = activeCardEl();
+  if (!el) { activeTaskId = null; return; }
+  el.classList.add('card-active');
+  el.scrollIntoView({ block: 'nearest' });
+}
+
+function stepActiveCard(dir) {
+  let el = activeCardEl();
+  if (!el) {
+    const first = boardEl.querySelector('.task-card');
+    if (first) setActiveCard(first.dataset.id);
+    return;
+  }
+  const colEl = el.closest('.column');
+  const cards = [...colEl.querySelectorAll('.task-card')];
+  const idx = cards.indexOf(el);
+  let next = cards[idx + dir];
+  if (!next && dir > 0) {
+    // 已到渲染区底部：还有未加载的任务则继续加载并跟进
+    const more = colEl.querySelector('.load-more');
+    if (more) {
+      loadMoreTasks(more.dataset.col);
+      next = [...colEl.querySelectorAll('.task-card')][idx + 1];
+    }
+  }
+  if (next) setActiveCard(next.dataset.id);
 }
 
 function onSubtaskMove(evt) {
@@ -716,6 +865,7 @@ function closeDiscarded() {
 function openDetail(taskId) {
   const t = findTask(taskId);
   if (!t) return;
+  clearActiveCard();
   openTaskId = taskId;
   document.getElementById('d-title').value = t.title;
   const createdEl = document.getElementById('d-created');
@@ -979,8 +1129,24 @@ boardEl.addEventListener('click', e => {
     }
     return;
   }
+  const navBtn = e.target.closest('.col-nav');
+  if (navBtn) {
+    const wrap = navBtn.closest('.col-nav-wrap');
+    const open = wrap.classList.toggle('open');
+    if (open) {
+      const f = wrap.querySelector('.col-nav-filter');
+      if (f) f.focus();
+    }
+    return;
+  }
+  const navTop = e.target.closest('.col-nav-top');
+  if (navTop) {
+    const list = navTop.closest('.column').querySelector('.task-list');
+    if (list) list.scrollTo({ top: 0 });
+    return;
+  }
   const navItem = e.target.closest('.col-nav-item');
-  if (navItem) {
+  if (navItem && navItem.dataset.id) {
     jumpToTask(navItem.closest('.column').dataset.id, navItem.dataset.id);
     return;
   }
@@ -1009,6 +1175,20 @@ boardEl.addEventListener('change', e => {
   if (e.target.classList.contains('subtask-check')) {
     toggleSubtask(e.target.closest('.subtask-row').dataset.id, e.target.checked);
   }
+});
+
+boardEl.addEventListener('input', e => {
+  if (!e.target.classList.contains('col-nav-filter')) return;
+  const q = e.target.value.trim().toLowerCase();
+  const list = e.target.closest('.col-nav-panel').querySelector('.col-nav-list');
+  let visible = 0;
+  list.querySelectorAll('.col-nav-item:not(.col-nav-top)').forEach(li => {
+    const show = !q || (li.dataset.full || '').toLowerCase().includes(q);
+    li.hidden = !show;
+    if (show) visible++;
+  });
+  const empty = list.querySelector('.col-nav-empty');
+  if (empty) empty.hidden = visible > 0;
 });
 
 boardEl.addEventListener('keydown', e => {
@@ -1064,6 +1244,77 @@ boardEl.addEventListener('scroll', e => {
   if (t.scrollTop + t.clientHeight >= t.scrollHeight - 60) loadMoreTasks(t.dataset.col);
 }, true);
 document.addEventListener('scroll', updateScrollFades, true);
+
+/* ================= 任务检索：事件 ================= */
+
+searchInput.addEventListener('input', runSearch);
+searchInput.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!searchResults.length) return;
+    const dir = e.key === 'ArrowDown' ? 1 : -1;
+    searchActive = (searchActive + dir + searchResults.length) % searchResults.length;
+    renderSearchPanel();
+    const el = searchPanel.querySelector('.search-item.active');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    jumpToSearchResult(searchActive < 0 ? 0 : searchActive);
+  } else if (e.key === 'Escape') {
+    if (searchInput.value) { searchInput.value = ''; closeSearchPanel(); }
+    else searchInput.blur();
+  }
+});
+searchPanel.addEventListener('mousedown', e => {
+  const item = e.target.closest('.search-item');
+  if (!item) return;
+  e.preventDefault(); // 防止搜索框失焦
+  const i = [...searchPanel.querySelectorAll('.search-item')].indexOf(item);
+  jumpToSearchResult(i);
+});
+document.addEventListener('click', e => {
+  if (!searchPanel.hidden && !e.target.closest('.search-wrap')) closeSearchPanel();
+  document.querySelectorAll('.col-nav-wrap.open').forEach(w => {
+    if (!w.contains(e.target)) w.classList.remove('open');
+  });
+});
+
+/* 全局快捷键：Ctrl+K / “/” 聚焦搜索；↑↓ / j k 卡片间移动；Enter 打开详情 */
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    searchInput.focus();
+    searchInput.select();
+    return;
+  }
+  const t = e.target;
+  const typing = !!(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable));
+  if (e.key === '/' && !typing) {
+    e.preventDefault();
+    searchInput.focus();
+    return;
+  }
+  if (typing) return;
+  if (openTaskId || discardedEl.classList.contains('open')) {
+    if (e.key === 'Escape') clearActiveCard();
+    return;
+  }
+  if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); stepActiveCard(1); }
+  else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); stepActiveCard(-1); }
+  else if (e.key === 'Enter') {
+    const el = activeCardEl();
+    if (el) { e.preventDefault(); openDetail(el.dataset.id); }
+  } else if (e.key === 'Escape') {
+    clearActiveCard();
+    document.querySelectorAll('.col-nav-wrap.open').forEach(w => w.classList.remove('open'));
+  }
+});
+
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(updateColNavVisibility, 150);
+});
 
 /* ================= events: detail panel ================= */
 
