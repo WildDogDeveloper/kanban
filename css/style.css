@@ -66,6 +66,19 @@ body {
   color: var(--text);
 }
 .search-input::placeholder { color: #a0a6b5; }
+.search-clear {
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 5px;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s;
+}
+.search-clear:hover { background: #e8eaf0; color: var(--text); }
 .search-panel {
   position: absolute;
   top: calc(100% + 6px);

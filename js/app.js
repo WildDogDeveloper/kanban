@@ -270,6 +270,7 @@ const discardedEl = document.getElementById('discarded');
 const backdropEl = document.getElementById('backdrop');
 const searchInput = document.getElementById('search');
 const searchPanel = document.getElementById('search-panel');
+const searchClearBtn = document.getElementById('search-clear');
 
 let sortables = [];
 let openTaskId = null;
@@ -354,12 +355,22 @@ function closeSearchPanel() {
   searchActive = -1;
 }
 
+function syncSearchClearBtn() {
+  searchClearBtn.hidden = !searchInput.value;
+}
+
+function clearSearch() {
+  searchInput.value = '';
+  closeSearchPanel();
+  syncSearchClearBtn();
+}
+
 function jumpToSearchResult(i) {
   const r = searchResults[i];
   if (!r) return;
   searchActive = i;
   jumpToTask(r.col.id, r.t.id);
-  renderSearchPanel();
+  clearSearch(); // 已找到：清空搜索
 }
 
 /* ================= rendering ================= */
@@ -1247,7 +1258,11 @@ document.addEventListener('scroll', updateScrollFades, true);
 
 /* ================= 任务检索：事件 ================= */
 
-searchInput.addEventListener('input', runSearch);
+searchInput.addEventListener('input', () => { syncSearchClearBtn(); runSearch(); });
+searchClearBtn.addEventListener('click', () => {
+  clearSearch();
+  searchInput.focus();
+});
 searchInput.addEventListener('keydown', e => {
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
@@ -1261,7 +1276,7 @@ searchInput.addEventListener('keydown', e => {
     e.preventDefault();
     jumpToSearchResult(searchActive < 0 ? 0 : searchActive);
   } else if (e.key === 'Escape') {
-    if (searchInput.value) { searchInput.value = ''; closeSearchPanel(); }
+    if (searchInput.value) clearSearch();
     else searchInput.blur();
   }
 });
