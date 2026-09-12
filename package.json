@@ -4,7 +4,6 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "ai": "node ai/server.js",
     "mcp": "node mcp/server.js",
     "cli": "node kanban.js"
   },

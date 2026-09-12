@@ -14,14 +14,14 @@
  *   }
  *
  * 环境变量：
- *   KANBAN_URL  看板 AI API 地址（ai/server.js），默认 http://127.0.0.1:8788
+ *   KANBAN_URL  看板 AI API 地址（主服务 /ai/ 前缀），默认 http://127.0.0.1:8787
  */
 
 const http = require('node:http');
 const https = require('node:https');
 const { URL } = require('node:url');
 
-const BASE = (process.env.KANBAN_URL || 'http://127.0.0.1:8788').replace(/\/$/, '');
+const BASE = (process.env.KANBAN_URL || 'http://127.0.0.1:8787').replace(/\/$/, '');
 
 function apiRequest(method, path, body) {
   return new Promise((resolve, reject) => {
@@ -128,19 +128,19 @@ const TOOLS = [
 ];
 
 const TOOL_HANDLERS = {
-  board_digest: async () => callApi('GET', '/api/digest'),
-  board_search: async (a) => callApi('GET', `/api/search?q=${encodeURIComponent(a.q)}`),
-  list_tasks: async (a) => callApi('GET', `/api/tasks${a.columnId ? `?columnId=${encodeURIComponent(a.columnId)}` : ''}`),
-  create_column: async (a) => callApi('POST', '/api/columns', a),
-  rename_column: async (a) => callApi('PATCH', `/api/columns/${encodeURIComponent(a.columnId)}`, { title: a.title }),
-  delete_column: async (a) => callApi('DELETE', `/api/columns/${encodeURIComponent(a.columnId)}`),
-  create_task: async (a) => callApi('POST', '/api/tasks', a),
-  update_task: async (a) => callApi('PATCH', `/api/tasks/${encodeURIComponent(a.taskId)}`, a),
-  delete_task: async (a) => callApi('DELETE', `/api/tasks/${encodeURIComponent(a.taskId)}${a.hard ? '?hard=1' : ''}`),
-  restore_task: async (a) => callApi('POST', `/api/tasks/${encodeURIComponent(a.taskId)}/restore`),
-  add_subtask: async (a) => callApi('POST', `/api/tasks/${encodeURIComponent(a.taskId)}/subtasks`, a),
-  update_subtask: async (a) => callApi('PATCH', `/api/subtasks/${encodeURIComponent(a.subtaskId)}`, a),
-  delete_subtask: async (a) => callApi('DELETE', `/api/subtasks/${encodeURIComponent(a.subtaskId)}`),
+  board_digest: async () => callApi('GET', '/ai/digest'),
+  board_search: async (a) => callApi('GET', `/ai/search?q=${encodeURIComponent(a.q)}`),
+  list_tasks: async (a) => callApi('GET', `/ai/tasks${a.columnId ? `?columnId=${encodeURIComponent(a.columnId)}` : ''}`),
+  create_column: async (a) => callApi('POST', '/ai/columns', a),
+  rename_column: async (a) => callApi('PATCH', `/ai/columns/${encodeURIComponent(a.columnId)}`, { title: a.title }),
+  delete_column: async (a) => callApi('DELETE', `/ai/columns/${encodeURIComponent(a.columnId)}`),
+  create_task: async (a) => callApi('POST', '/ai/tasks', a),
+  update_task: async (a) => callApi('PATCH', `/ai/tasks/${encodeURIComponent(a.taskId)}`, a),
+  delete_task: async (a) => callApi('DELETE', `/ai/tasks/${encodeURIComponent(a.taskId)}${a.hard ? '?hard=1' : ''}`),
+  restore_task: async (a) => callApi('POST', `/ai/tasks/${encodeURIComponent(a.taskId)}/restore`),
+  add_subtask: async (a) => callApi('POST', `/ai/tasks/${encodeURIComponent(a.taskId)}/subtasks`, a),
+  update_subtask: async (a) => callApi('PATCH', `/ai/subtasks/${encodeURIComponent(a.subtaskId)}`, a),
+  delete_subtask: async (a) => callApi('DELETE', `/ai/subtasks/${encodeURIComponent(a.subtaskId)}`),
 };
 
 /* ---------- JSON-RPC over stdio ---------- */

@@ -82,6 +82,9 @@ function validState(s) {
   return true;
 }
 
+/* AI 接口（agent/CLI/MCP）：路由模块见 ai/api.js，复用本服务 DB 连接 */
+const aiHandle = require('./ai/api').init({ stmtGet, stmtSet, validState, sendJSON });
+
 const server = http.createServer((req, res) => {
   let url;
   try {
@@ -100,6 +103,11 @@ const server = http.createServer((req, res) => {
     });
     res.end();
     return;
+  }
+
+  /* AI 接口（/ai/ 前缀） */
+  if (url.pathname.startsWith('/ai/')) {
+    return aiHandle(req, res, url);
   }
 
   /* ---------- API ---------- */

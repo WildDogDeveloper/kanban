@@ -4,7 +4,7 @@
  * Kanban CLI — 终端 AI / 脚本 / cron 入口
  *
  * 环境变量：
- *   KANBAN_URL  看板 AI API 地址（ai/server.js），默认 http://127.0.0.1:8788
+ *   KANBAN_URL  看板 AI API 地址（主服务 /ai/ 前缀），默认 http://127.0.0.1:8787
  *
  * 用法：node kanban.js <命令> [参数] [--json]
  *   digest                          看板概览
@@ -22,7 +22,7 @@
  *   help
  */
 
-const BASE = (process.env.KANBAN_URL || 'http://127.0.0.1:8788').replace(/\/$/, '');
+const BASE = (process.env.KANBAN_URL || 'http://127.0.0.1:8787').replace(/\/$/, '');
 
 
 function fail(msg) {
@@ -146,43 +146,43 @@ async function main() {
 
   switch (cmd) {
     case 'digest': {
-      const d = await api('GET', '/api/digest');
+      const d = await api('GET', '/ai/digest');
       out(d, fmtDigest(d.digest), json);
       break;
     }
     case 'search': {
       if (!a0) fail('用法：search <关键词>');
-      const d = await api('GET', `/api/search?q=${encodeURIComponent(a0)}`);
+      const d = await api('GET', `/ai/search?q=${encodeURIComponent(a0)}`);
       out(d, fmtSearch(d), json);
       break;
     }
     case 'tasks':
     case 'list': {
       const col = flags.col;
-      const d = await api('GET', `/api/tasks${col ? `?columnId=${encodeURIComponent(col)}` : ''}`);
+      const d = await api('GET', `/ai/tasks${col ? `?columnId=${encodeURIComponent(col)}` : ''}`);
       out(d, fmtTasks(d), json);
       break;
     }
     case 'columns': {
-      const d = await api('GET', '/api/columns');
+      const d = await api('GET', '/ai/columns');
       out(d, d.columns.map(c => `${c.title}  (${c.count})  #${c.id}`).join('\n'), json);
       break;
     }
     case 'add-column': {
       if (!a0) fail('用法：add-column <名称>');
-      const d = await api('POST', '/api/columns', { title: a0 });
+      const d = await api('POST', '/ai/columns', { title: a0 });
       out(d, `✓ 已建列「${d.column.title}」 #${d.column.id}`, json);
       break;
     }
     case 'rename-column': {
       if (!a0 || !a1) fail('用法：rename-column <列ID> <新名称>');
-      const d = await api('PATCH', `/api/columns/${encodeURIComponent(a0)}`, { title: a1 });
+      const d = await api('PATCH', `/ai/columns/${encodeURIComponent(a0)}`, { title: a1 });
       out(d, `✓ 列已改名「${d.column.title}」`, json);
       break;
     }
     case 'del-column': {
       if (!a0) fail('用法：del-column <列ID>');
-      const d = await api('DELETE', `/api/columns/${encodeURIComponent(a0)}`);
+      const d = await api('DELETE', `/ai/columns/${encodeURIComponent(a0)}`);
       out(d, '✓ 列已删除', json);
       break;
     }
@@ -195,7 +195,7 @@ async function main() {
       if (flags.tags !== undefined) body.tags = String(flags.tags).split(',').map(s => s.trim()).filter(Boolean);
       if (flags.assignee !== undefined) body.assignee = flags.assignee;
       if (flags.note !== undefined) body.completionNote = flags.note;
-      const d = await api('POST', '/api/tasks', body);
+      const d = await api('POST', '/ai/tasks', body);
       out(d, `✓ 已建任务「${d.task.title}」 #${d.task.id}`, json);
       break;
     }
@@ -211,19 +211,19 @@ async function main() {
       if (flags.note !== undefined) body.completionNote = flags.note;
       if (flags.col !== undefined) body.columnId = flags.col;
       if (!Object.keys(body).length) fail('没有要更新的字段');
-      const d = await api('PATCH', `/api/tasks/${encodeURIComponent(a0)}`, body);
+      const d = await api('PATCH', `/ai/tasks/${encodeURIComponent(a0)}`, body);
       out(d, `✓ 已更新任务「${d.task.title}」 #${d.task.id}`, json);
       break;
     }
     case 'del-task': {
       if (!a0) fail('用法：del-task <任务ID> [--hard]');
-      const d = await api('DELETE', `/api/tasks/${encodeURIComponent(a0)}${flags.hard ? '?hard=1' : ''}`);
+      const d = await api('DELETE', `/ai/tasks/${encodeURIComponent(a0)}${flags.hard ? '?hard=1' : ''}`);
       out(d, d.deleted === 'hard' ? '✓ 任务已永久删除' : '✓ 任务已废弃（restore-task 可恢复）', json);
       break;
     }
     case 'restore-task': {
       if (!a0) fail('用法：restore-task <任务ID>');
-      const d = await api('POST', `/api/tasks/${encodeURIComponent(a0)}/restore`);
+      const d = await api('POST', `/ai/tasks/${encodeURIComponent(a0)}/restore`);
       out(d, `✓ 已恢复「${d.task.title}」`, json);
       break;
     }
@@ -231,20 +231,20 @@ async function main() {
       if (!a0 || !a1) fail('用法：add-sub <任务ID> <标题> [--assignee]');
       const body = { title: a1 };
       if (flags.assignee !== undefined) body.assignee = flags.assignee;
-      const d = await api('POST', `/api/tasks/${encodeURIComponent(a0)}/subtasks`, body);
+      const d = await api('POST', `/ai/tasks/${encodeURIComponent(a0)}/subtasks`, body);
       out(d, `✓ 已加子项「${d.subtask.title}」 #${d.subtask.id}`, json);
       break;
     }
     case 'sub': {
       if (!a0 || !a1) fail('用法：sub <子项ID> done|undone|del [--title] [--assignee]');
       if (a1 === 'del') {
-        const d = await api('DELETE', `/api/subtasks/${encodeURIComponent(a0)}`);
+        const d = await api('DELETE', `/ai/subtasks/${encodeURIComponent(a0)}`);
         out(d, '✓ 子项已删除', json);
       } else {
         const body = { done: a1 === 'done' };
         if (flags.title !== undefined) body.title = flags.title;
         if (flags.assignee !== undefined) body.assignee = flags.assignee;
-        const d = await api('PATCH', `/api/subtasks/${encodeURIComponent(a0)}`, body);
+        const d = await api('PATCH', `/ai/subtasks/${encodeURIComponent(a0)}`, body);
         out(d, `✓ 子项「${d.subtask.title}」已${d.subtask.done ? '勾选' : '取消勾选'}`, json);
       }
       break;

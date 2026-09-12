@@ -11,7 +11,7 @@
 - **服务**：`systemctl restart kanban`（`PORT=8787`）
 - **访问**：`http://108.186.246.232:8787/`
 - **数据**：`/opt/kanban/kanban.db`（备份 = 复制此文件）
-- **AI 服务**：`systemctl restart kanban-ai`（`AI_PORT=8788`，独立进程，与主服务共享 kanban.db，WAL 并发安全；崩溃不影响主服务）
+- **AI 接口**：`/ai/` 前缀，同 8787（无独立进程，见下文「AI 接口」）
 
 ### 更新代码（本地执行：上库 → scp → 重启 → 验证）
 
@@ -27,7 +27,7 @@
    scp -o StrictHostKeyChecking=accept-new css/style.css root@108.186.246.232:/opt/kanban/css/style.css
    scp -o StrictHostKeyChecking=accept-new js/app.js    root@108.186.246.232:/opt/kanban/js/app.js
    # 全量覆盖（改了 server.js/index.html 等时用这条）
-   scp -o StrictHostKeyChecking=accept-new index.html server.js backup.js css js ai mcp kanban.js package.json root@108.186.246.232:/opt/kanban/
+   scp -r -o StrictHostKeyChecking=accept-new index.html server.js backup.js css js ai mcp kanban.js package.json root@108.186.246.232:/opt/kanban/
    ```
 
 3. **重启服务并确认**（期望输出 `active` + `HTTP 200`）：
@@ -41,58 +41,37 @@
 
 > 安全提醒：登录密码/密钥请勿提交到仓库；密码在 VPS 控制台（tianliyun.cn）管理。
 
-## AI 接口（agent / CLI / MCP，独立进程）
+## AI 接口（agent / CLI / MCP，/ai/ 前缀）
 
-AI 功能与主服务**完全解耦**：独立进程 `ai/server.js`（端口 8788），共享同一个 `kanban.db`（WAL 模式并发安全）。
-主服务 `server.js` 零改动；AI 服务崩溃/重启不影响前端。数据源唯一：两边写的都是同一个库。
+AI 功能与主服务**功能文件解耦**：AI 逻辑全在独立模块 `ai/api.js`，主服务 `server.js` 仅 4 行挂载（`require` + 路由分发）。
+单端口 **8787**，路径统一 `/ai/` 前缀，复用主服务的 DB 连接（同进程同库，无跨进程锁问题）。
+主服务原有端点（`/api/state`、静态页面）零改动；AI 模块崩溃不影响前端（异常被主服务捕获）。
 
 ### 文件
 
-- `ai/server.js` — AI API 服务器（资源级 REST，语义与前端操作一致）
+- `ai/api.js` — AI API 路由模块（资源级 REST，语义与前端操作一致；不起 HTTP 服务）
 - `mcp/server.js` — MCP 服务器（stdio，零依赖），把 API 包装成 13 个结构化工具
 - `kanban.js` — CLI（终端 AI / 脚本 / cron 入口）
 
-### AI API 端点（端口 8788）
+### AI API 端点（8787，/ai/ 前缀）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/health` | 健康检查 |
-| GET | `/api/digest` | 看板概览：列/任务/进度/逾期/统计（AI 读板首选） |
-| GET | `/api/search?q=` | 搜索任务与子项（多词空格分隔，全部需命中） |
-| GET | `/api/columns` | 列列表（含任务数） |
-| POST | `/api/columns` | 建列 `{title}` |
-| PATCH | `/api/columns/:id` | 改列名 `{title}` |
-| DELETE | `/api/columns/:id` | 删列（列内有任务 409；已完成列 400） |
-| GET | `/api/tasks?columnId=` | 任务完整列表（含子项） |
-| POST | `/api/tasks` | 建任务 `{columnId, title, description?, priority?, dueDate?, tags?, assignee?}` |
-| PATCH | `/api/tasks/:id` | 改任务字段（只传要改的；传 `columnId` 即跨列移动，移入已完成自动记完成时间） |
-| DELETE | `/api/tasks/:id?hard=1` | 删任务（默认废弃可恢复；`hard=1` 永久删除） |
-| POST | `/api/tasks/:id/restore` | 恢复废弃任务 |
-| POST | `/api/tasks/:id/subtasks` | 加子项 `{title, assignee?}` |
-| PATCH | `/api/subtasks/:id` | 改子项 `{done?, title?, assignee?}` |
-| DELETE | `/api/subtasks/:id` | 删子项 |
-
-### 部署 AI 服务（服务器，一次性）
-
-```bash
-ssh root@108.186.246.232 "cat > /etc/systemd/system/kanban-ai.service <<'EOF'
-[Unit]
-Description=Kanban AI API
-After=network.target
-
-[Service]
-Environment=AI_PORT=8788
-ExecStart=/usr/bin/node /opt/kanban/ai/server.js
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-systemctl daemon-reload && systemctl enable --now kanban-ai"
-```
-
-- 云安全组/防火墙放行 **8788**（TCP，仅当需要远程 AI 访问时）
-- 无认证（与主服务一致：仅可信网络使用）
+| GET | `/ai/health` | 健康检查 |
+| GET | `/ai/digest` | 看板概览：列/任务/进度/逾期/统计（AI 读板首选） |
+| GET | `/ai/search?q=` | 搜索任务与子项（多词空格分隔，全部需命中） |
+| GET | `/ai/columns` | 列列表（含任务数） |
+| POST | `/ai/columns` | 建列 `{title}` |
+| PATCH | `/ai/columns/:id` | 改列名 `{title}` |
+| DELETE | `/ai/columns/:id` | 删列（列内有任务 409；已完成列 400） |
+| GET | `/ai/tasks?columnId=` | 任务完整列表（含子项） |
+| POST | `/ai/tasks` | 建任务 `{columnId, title, description?, priority?, dueDate?, tags?, assignee?}` |
+| PATCH | `/ai/tasks/:id` | 改任务字段（只传要改的；传 `columnId` 即跨列移动，移入已完成自动记完成时间） |
+| DELETE | `/ai/tasks/:id?hard=1` | 删任务（默认废弃可恢复；`hard=1` 永久删除） |
+| POST | `/ai/tasks/:id/restore` | 恢复废弃任务 |
+| POST | `/ai/tasks/:id/subtasks` | 加子项 `{title, assignee?}` |
+| PATCH | `/ai/subtasks/:id` | 改子项 `{done?, title?, assignee?}` |
+| DELETE | `/ai/subtasks/:id` | 删子项 |
 
 ### MCP 客户端配置（AI 直接操作看板）
 
@@ -102,7 +81,7 @@ systemctl daemon-reload && systemctl enable --now kanban-ai"
     "kanban": {
       "command": "node",
       "args": ["/opt/kanban/mcp/server.js"],
-      "env": { "KANBAN_URL": "http://108.186.246.232:8788" }
+      "env": { "KANBAN_URL": "http://108.186.246.232:8787" }
     }
   }
 }
@@ -113,7 +92,7 @@ systemctl daemon-reload && systemctl enable --now kanban-ai"
 ### CLI
 
 ```bash
-export KANBAN_URL=http://108.186.246.232:8788
+export KANBAN_URL=http://108.186.246.232:8787
 node kanban.js digest                          # 看板概览
 node kanban.js search 关键词                    # 搜索任务/子项
 node kanban.js add-task <列ID> <标题> --prio high --due 2026-10-01
@@ -126,11 +105,13 @@ node kanban.js help                            # 全部命令；加 --json 输�
 ### 更新 AI 部分（本地执行）
 
 ```bash
-# 传 AI 相关文件（server.js 未改则不用传）
+# 传 AI 相关文件（server.js 有改动时一并传）
+scp -r -o StrictHostKeyChecking=accept-new ai mcp root@108.186.246.232:/opt/kanban/
 scp -o StrictHostKeyChecking=accept-new kanban.js package.json root@108.186.246.232:/opt/kanban/
-scp -o StrictHostKeyChecking=accept-new ai mcp root@108.186.246.232:/opt/kanban/
-ssh root@108.186.246.232 "systemctl restart kanban-ai && systemctl is-active kanban-ai && curl -s http://127.0.0.1:8788/health"
+ssh root@108.186.246.232 "systemctl restart kanban && systemctl is-active kanban && curl -s http://127.0.0.1:8787/ai/health"
 ```
+
+> 无认证（与主服务一致：仅可信网络使用）。AI 入口是 MCP/CLI（非浏览器客户端），未配 CORS；如以后要跨域浏览器 AI 工具，再扩 server.js 的 OPTIONS allow-methods。
 
 ## 1. 服务器装 Node
 

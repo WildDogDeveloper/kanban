@@ -28,6 +28,7 @@
       <button id="discarded-btn" class="btn" title="查看废弃任务">废弃 <span id="disc-count">0</span></button>
       <button id="export-btn" class="btn" title="导出 JSON 备份">导出</button>
       <button id="import-btn" class="btn" title="从 JSON 备份导入">导入</button>
+      <button id="ai-btn" class="btn" title="AI 看板使用说明（点击复制，粘贴给 AI 助手即可操作看板）">AI 说明</button>
       <input type="file" id="import-file" accept=".json,application/json" hidden>
     </div>
   </header>
@@ -96,6 +97,22 @@
       <p class="disc-hint">废弃的任务会从看板隐藏，子项和详情都保留。可以恢复到原来的列，或彻底删除。</p>
       <div id="disc-list"></div>
       </div>
+    </div>
+  </aside>
+
+  <aside id="ai-help" class="detail" aria-label="AI 使用说明">
+    <div class="detail-header">
+      <h2>AI 看板使用说明</h2>
+      <button id="ai-help-close" class="icon-btn" title="关闭 (Esc)">&times;</button>
+    </div>
+    <div class="detail-body-wrap">
+      <div class="detail-body">
+      <p class="ai-help-hint">复制下面全部内容，粘贴给你的 AI 助手（Claude / ChatGPT / 终端 agent 等），它就能直接读写这个看板。地址已按当前服务器自动填充。</p>
+      <pre id="ai-help-text" class="ai-help-text"></pre>
+      </div>
+    </div>
+    <div class="detail-footer">
+      <button id="ai-help-copy" class="btn accent">复制使用说明</button>
     </div>
   </aside>
 

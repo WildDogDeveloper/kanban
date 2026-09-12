@@ -272,6 +272,7 @@ const searchInput = document.getElementById('search');
 const searchPanel = document.getElementById('search-panel');
 const searchClearBtn = document.getElementById('search-clear');
 const searchKbd = document.getElementById('search-kbd');
+const aiHelpEl = document.getElementById('ai-help');
 
 let sortables = [];
 let openTaskId = null;
@@ -882,7 +883,7 @@ function renderDiscarded() {
 }
 
 function syncBackdrop() {
-  const anyOpen = detailEl.classList.contains('open') || discardedEl.classList.contains('open');
+  const anyOpen = detailEl.classList.contains('open') || discardedEl.classList.contains('open') || aiHelpEl.classList.contains('open');
   backdropEl.classList.toggle('open', anyOpen);
 }
 
@@ -1347,12 +1348,14 @@ window.addEventListener('resize', () => {
 document.getElementById('d-close').addEventListener('click', closeDetail);
 backdropEl.addEventListener('click', () => {
   if (discardedEl.classList.contains('open')) closeDiscarded();
+  else if (aiHelpEl.classList.contains('open')) closeAiHelp();
   else closeDetail();
 });
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (ctxMenu.classList.contains('open')) { closeAssignMenu(); return; }
   if (discardedEl.classList.contains('open')) closeDiscarded();
+  else if (aiHelpEl.classList.contains('open')) closeAiHelp();
   else if (openTaskId) closeDetail();
 });
 
@@ -1488,6 +1491,104 @@ document.getElementById('disc-list').addEventListener('click', e => {
   if (!btn) return;
   if (btn.dataset.act === 'restore') restoreTask(btn.dataset.id);
   else purgeTask(btn.dataset.id);
+});
+
+/* ================= AI 使用说明（复制给 AI 助手） ================= */
+
+function buildAiHelpText() {
+  const base = location.origin;
+  return `# 任务看板（Kanban）操作说明
+
+这是一个任务看板服务，数据为列 → 任务 → 子项。请按以下任一方式读写（三选一，方式一优先）。
+
+看板地址：${base}
+
+## 方式一：MCP（支持 MCP 的客户端首选）
+在 MCP 客户端配置中加入（mcpServers）：
+{
+  "kanban": {
+    "command": "node",
+    "args": ["/opt/kanban/mcp/server.js"],
+    "env": { "KANBAN_URL": "${base}" }
+  }
+}
+可用工具：board_digest（看板概览，读板首选）/ board_search / list_tasks / create_column / rename_column / delete_column / create_task / update_task / delete_task / restore_task / add_subtask / update_subtask / delete_subtask
+
+## 方式二：CLI（终端 agent / 脚本）
+KANBAN_URL=${base} node kanban.js <命令> [参数] [--json]
+  digest                          看板概览
+  search <关键词>                  搜索任务/子项
+  tasks [--col <列ID>]             任务完整列表（含子项）
+  columns                         列列表
+  add-column <名称>
+  rename-column <列ID> <新名称>
+  del-column <列ID>
+  add-task <列ID> <标题> [--desc] [--prio low|medium|high] [--due YYYY-MM-DD] [--tags a,b] [--assignee]
+  update-task <任务ID> [--title] [--desc] [--prio] [--due] [--tags] [--assignee] [--col <列ID>]   # 传 --col 即跨列移动
+  del-task <任务ID> [--hard]       默认废弃（可恢复）；--hard 永久删除
+  restore-task <任务ID>            恢复废弃任务
+  add-sub <任务ID> <标题> [--assignee]
+  sub <子项ID> done|undone|del [--title] [--assignee]
+
+## 方式三：REST API（${base}，JSON，/ai/ 前缀）
+GET    /ai/health                 健康检查
+GET    /ai/digest                 看板概览（列/任务/进度/逾期/统计，读板首选）
+GET    /ai/search?q=关键词         搜索任务与子项（多词空格分隔，全部需命中）
+GET    /ai/columns                列列表（含任务数）
+POST   /ai/columns                建列 {title}
+PATCH  /ai/columns/:id            改列名 {title}
+DELETE /ai/columns/:id            删列（列内有任务 409；「已完成」列 400）
+GET    /ai/tasks?columnId=        任务完整列表（含子项）
+POST   /ai/tasks                  建任务 {columnId, title, description?, priority?, dueDate?, tags?, assignee?}
+PATCH  /ai/tasks/:id              改任务字段（只传要改的；传 columnId 即跨列移动，移入「已完成」自动记完成时间）
+DELETE /ai/tasks/:id?hard=1       删任务（默认废弃可恢复；hard=1 永久删除）
+POST   /ai/tasks/:id/restore      恢复废弃任务
+POST   /ai/tasks/:id/subtasks     加子项 {title, assignee?}
+PATCH  /ai/subtasks/:id           改子项 {done?, title?, assignee?}
+DELETE /ai/subtasks/:id           删子项
+
+## 约定
+- 优先级：none|low|medium|high；截止日期：YYYY-MM-DD
+- 「已完成」列不可删除；任务移入该列自动记完成时间，移出自动清除
+- 删任务默认废弃（可用 restore 恢复），只有明确要求时才永久删除（--hard / hard=1）
+- 响应均为 JSON：成功 {ok:true, ...}，失败 {ok:false, error}
+`;
+}
+
+function closeAiHelp() {
+  aiHelpEl.classList.remove('open');
+  syncBackdrop();
+}
+
+document.getElementById('ai-btn').addEventListener('click', () => {
+  if (openTaskId) closeDetail();
+  document.getElementById('ai-help-text').textContent = buildAiHelpText();
+  aiHelpEl.classList.add('open');
+  syncBackdrop();
+});
+document.getElementById('ai-help-close').addEventListener('click', closeAiHelp);
+
+/* 复制：优先 clipboard API；HTTP 非安全上下文回退 execCommand */
+document.getElementById('ai-help-copy').addEventListener('click', async () => {
+  const text = document.getElementById('ai-help-text').textContent;
+  let ok = false;
+  try {
+    if (navigator.clipboard) await navigator.clipboard.writeText(text);
+    else throw new Error('no clipboard api');
+    ok = true;
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    ta.remove();
+  }
+  const btn = document.getElementById('ai-help-copy');
+  btn.textContent = ok ? '✓ 已复制，去粘贴给 AI 吧' : '复制失败，请手动全选复制';
+  setTimeout(() => { btn.textContent = '复制使用说明'; }, 2000);
 });
 
 /* ================= export / import ================= */
