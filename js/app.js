@@ -321,11 +321,14 @@ function runSearch() {
   const q = searchInput.value.trim().toLowerCase();
   if (!q) { closeSearchPanel(); return; }
   const words = q.split(/\s+/);
+  const matchAll = (hay) => words.every(w => hay.includes(w));
   searchResults = [];
   for (const col of state.columns) {
     for (const t of tasksInColumn(col.id)) {
       const hay = [t.title, t.description, t.assignee, ...(t.tags || [])].filter(Boolean).join('\n').toLowerCase();
-      if (words.every(w => hay.includes(w))) searchResults.push({ t, col });
+      if (matchAll(hay)) { searchResults.push({ t, col, sub: null }); continue; }
+      const sub = t.subtasks.find(s => matchAll((s.title || '').toLowerCase()));
+      if (sub) searchResults.push({ t, col, sub });
     }
   }
   searchActive = searchResults.length ? 0 : -1;
@@ -339,14 +342,17 @@ function renderSearchPanel() {
   const shown = searchResults.slice(0, 100);
   const rows = shown.map((r, i) => {
     const accent = r.col.title === DONE_TITLE ? DONE_ACCENT : ACCENTS[state.columns.indexOf(r.col) % ACCENTS.length];
+    const badge = r.sub ? '<span class="search-sub-badge">子项</span>' : '';
+    const title = r.sub ? r.sub.title : r.t.title;
     return `<li class="search-item${i === searchActive ? ' active' : ''}" data-col="${r.col.id}" data-id="${r.t.id}">
       <span class="search-col" style="color:${accent}">${esc(r.col.title)}</span>
-      <span class="search-title">${highlightHTML(r.t.title, words)}</span>
+      ${badge}
+      <span class="search-title">${highlightHTML(title, words)}</span>
     </li>`;
   }).join('');
   searchPanel.innerHTML =
     `<div class="search-count">${searchResults.length} 个结果${searchResults.length > shown.length ? `（显示前 ${shown.length} 个）` : ''}</div>` +
-    (rows || '<div class="search-empty">没有匹配的任务</div>');
+    (rows || '<div class="search-empty">没有匹配的任务或子项</div>');
   searchPanel.hidden = false;
 }
 
@@ -372,7 +378,7 @@ function jumpToSearchResult(i) {
   const r = searchResults[i];
   if (!r) return;
   searchActive = i;
-  jumpToTask(r.col.id, r.t.id);
+  jumpToTask(r.col.id, r.t.id, r.sub && r.sub.id);
   clearSearch(); // 已找到：清空搜索
 }
 
@@ -502,8 +508,7 @@ function renderDetailSubtasks() {
 
 function render() {
   destroySortables();
-  boardEl.innerHTML = state.columns.map((col, i) => columnHTML(col, i)).join('') +
-    '<button class="add-column" id="add-column">＋ 新建列</button>';
+  boardEl.innerHTML = state.columns.map((col, i) => columnHTML(col, i)).join('');
   if (openTaskId) renderDetailSubtasks();
   renderDiscarded();
   initSortables();
@@ -538,7 +543,7 @@ function initSortables() {
     group: 'columns',
     handle: '.col-header',
     draggable: '.column',
-    filter: '#add-column, .col-rename-input, .col-nav-wrap',
+    filter: '.col-rename-input, .col-nav-wrap',
     animation: 150,
     ghostClass: 'drag-ghost',
     onEnd: onColumnMove,
@@ -628,8 +633,8 @@ function flashCard(cardEl) {
   setTimeout(() => cardEl.classList.remove('flash'), 900);
 }
 
-/* 快速导航：滚动到指定主项并高亮；未渲染则先加载 */
-function jumpToTask(colId, taskId) {
+/* 快速导航：滚动到指定主项并高亮；未渲染则先加载；subId 存在时额外定位并高亮该子项 */
+function jumpToTask(colId, taskId, subId) {
   const tasks = tasksInColumn(colId);
   const idx = tasks.findIndex(t => t.id === taskId);
   if (idx < 0) return;
@@ -644,6 +649,14 @@ function jumpToTask(colId, taskId) {
   void list?.offsetHeight; // 强制重排，确保新渲染的卡片已布局
   card.scrollIntoView({ behavior: 'auto', block: 'center' });
   flashCard(card);
+  if (subId) {
+    const row = card.querySelector(`.subtask-row[data-id="${subId}"]`);
+    if (row) {
+      row.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+      row.classList.add('sub-flash');
+      setTimeout(() => row.classList.remove('sub-flash'), 900);
+    }
+  }
 }
 
 /* 超长列判定：任务数超过一页，或列内容超出可视高度（卡片多且长） */
@@ -1138,15 +1151,6 @@ document.addEventListener('scroll', () => {
 
 boardEl.addEventListener('click', e => {
   if (justDragged) return;
-  if (e.target.id === 'add-column') {
-    const title = prompt('列名称', '新列');
-    if (title && title.trim()) {
-      state.columns.push({ id: uid(), title: title.trim() });
-      save();
-      render();
-    }
-    return;
-  }
   const navBtn = e.target.closest('.col-nav');
   if (navBtn) {
     const wrap = navBtn.closest('.col-nav-wrap');
@@ -1462,6 +1466,15 @@ dList.addEventListener('click', e => {
 
 document.getElementById('d-delete').addEventListener('click', () => deleteTask(openTaskId));
 document.getElementById('d-discard').addEventListener('click', () => discardTask(openTaskId));
+
+document.getElementById('add-column').addEventListener('click', () => {
+  const title = prompt('列名称', '新列');
+  if (title && title.trim()) {
+    state.columns.push({ id: uid(), title: title.trim() });
+    save();
+    render();
+  }
+});
 
 document.getElementById('discarded-btn').addEventListener('click', () => {
   if (openTaskId) closeDetail();

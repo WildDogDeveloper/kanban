@@ -130,6 +130,16 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.search-sub-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--border);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
 .search-title { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-item.active .search-title { color: var(--accent); }
 .search-empty { font-size: 13px; color: var(--text-dim); padding: 10px 8px; }
@@ -490,6 +500,11 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
   cursor: grab;
 }
 .subtask-row:hover { background: #f4f5f9; }
+.subtask-row.sub-flash { animation: subFlash 0.9s ease; }
+@keyframes subFlash {
+  0%, 25% { background: var(--accent-soft); }
+  100% { background: transparent; }
+}
 .subtask-check {
   appearance: none;
   -webkit-appearance: none;
@@ -615,20 +630,6 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
 }
 .task-add-input:focus { border-color: var(--accent); background: #fff; }
 
-.add-column {
-  flex: 0 0 260px;
-  border: 1.5px dashed #c9cdd8;
-  background: rgba(255, 255, 255, 0.4);
-  border-radius: 14px;
-  padding: 14px;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-family: inherit;
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
-}
-.add-column:hover { border-color: var(--accent); color: var(--accent); background: #fff; }
 .load-more {
   border: 1px dashed #c9cdd8;
   background: rgba(255, 255, 255, 0.5);
@@ -845,8 +846,10 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
 /* ---------- responsive ---------- */
 @media (max-width: 720px) {
   .topbar { padding: 10px 14px; }
+  .search-input { width: 150px; }
+  .search-kbd { display: none; }
   .board { padding: 14px; gap: 12px; }
-  .column, .add-column { flex: 0 0 264px; min-width: 0; max-width: none; }
+  .column { flex: 0 0 264px; min-width: 0; max-width: none; }
   .detail { width: 100vw; max-width: 100vw; }
 }
 
