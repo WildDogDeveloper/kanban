@@ -3,6 +3,30 @@
 一台 Linux 云主机即可（1C1G 足够；阿里云/腾讯云轻量服务器、ECS 都行，Ubuntu 22.04 / Debian 12）。
 **IP 直接访问，不需要域名、不需要 Docker**。全部数据在 `kanban.db` 一个文件里，**备份 = 复制这个文件**。
 
+## 当前服务器（美国 VPS，已部署）
+
+- **IP**：`108.186.246.232`（tianliyun.cn 美国个人主机，Ubuntu 24.04）
+- **登录**：`ssh root@108.186.246.232`（端口 22；本机已配置密钥登录，密钥 `~/.ssh/id_ed25519`）
+- **代码目录**：`/opt/kanban`（**scp 部署，非 git 仓库**）
+- **服务**：`systemctl restart kanban`（`PORT=8787`）
+- **访问**：`http://108.186.246.232:8787/`
+- **数据**：`/opt/kanban/kanban.db`（备份 = 复制此文件）
+
+### 更新代码（scp 覆盖 + 重启，本地执行）
+
+```bash
+cd <本地 kanban 仓库目录>
+# 只传改动的文件（示例：前端改动）
+scp -o StrictHostKeyChecking=accept-new css/style.css root@108.186.246.232:/opt/kanban/css/style.css
+scp -o StrictHostKeyChecking=accept-new js/app.js    root@108.186.246.232:/opt/kanban/js/app.js
+# 或整目录覆盖：scp -o StrictHostKeyChecking=accept-new index.html server.js backup.js css js root@108.186.246.232:/opt/kanban/
+
+# 重启并确认
+ssh root@108.186.246.232 "systemctl restart kanban && systemctl is-active kanban && curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:8787/"
+```
+
+> 安全提醒：登录密码/密钥请勿提交到仓库；密码在 VPS 控制台（tianliyun.cn）管理。
+
 ## 1. 服务器装 Node
 
 ```bash
