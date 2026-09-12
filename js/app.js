@@ -5,6 +5,15 @@
 const STORAGE_KEY = 'kanban.state.v1';
 const PRIORITIES = { none: '无', low: '低', medium: '中', high: '高' };
 const ACCENTS = ['#4f6ef7', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#ef4444'];
+/* 主项标题栏底色：相邻卡片错色（淡色），[常态, 悬停] */
+const CARD_TINTS = [
+  ['#ecf0fe', '#dfe7fd'],
+  ['#fdf2dc', '#fbe8c0'],
+  ['#f2ecfe', '#e5d9fd'],
+  ['#ddf6f9', '#c2eef4'],
+  ['#fde0ee', '#fbc9e0'],
+  ['#fddcdc', '#fbc9c9'],
+];
 const DONE_ACCENT = '#10b981';
 const DONE_TITLE = '已完成';
 const PAGE_SIZE = 10;
@@ -305,7 +314,7 @@ function subHTML(s) {
   </li>`;
 }
 
-function cardHTML(t) {
+function cardHTML(t, idx) {
   const p = progressOf(t);
   const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
   const pri = t.priority !== 'none' ? `<span class="chip chip-${t.priority}">${PRIORITIES[t.priority]}</span>` : '';
@@ -324,7 +333,8 @@ function cardHTML(t) {
     ? `<p class="task-completion">${esc(t.completionNote.trim())}</p>`
     : '';
   const tags = (t.tags || []).map(tag => `<span class="chip chip-tag">${esc(tag)}</span>`).join('');
-  return `<article class="task-card" data-id="${t.id}">
+  const tint = CARD_TINTS[idx % CARD_TINTS.length];
+  return `<article class="task-card" data-id="${t.id}" tabindex="-1" style="--card-tint:${tint[0]};--card-tint-hover:${tint[1]}">
     <div class="card-top">
       <span class="task-handle" title="拖动移动任务">⠿</span>
       <h3 class="task-title">${esc(t.title)}</h3>
@@ -353,15 +363,24 @@ function columnHTML(col, idx) {
     ? `<span class="col-title">${esc(col.title)}</span>`
     : `<span class="col-title" title="双击重命名">${esc(col.title)}</span>`;
   const del = done ? '' : '<button class="col-del" title="删除列">×</button>';
+  const nav = tasks.length > PAGE_SIZE
+    ? `<div class="col-nav-wrap">
+        <button class="col-nav" title="快速导航">☰</button>
+        <div class="col-nav-panel">
+          <ul class="col-nav-list">${tasks.map(t => `<li class="col-nav-item" data-id="${t.id}" data-full="${esc(t.title)}">${esc(t.title)}</li>`).join('')}</ul>
+        </div>
+       </div>`
+    : '';
   return `<section class="column${done ? ' column-done' : ''}" data-id="${col.id}" style="--col-accent:${accent}">
     <header class="col-header">
       ${head}
       ${title}
       <span class="col-count">${tasks.length}</span>
+      ${nav}
       ${del}
     </header>
     <input class="task-add-input" placeholder="＋ 添加任务，回车确认" maxlength="200">
-    <div class="task-list" data-col="${col.id}">${shown.map(cardHTML).join('') || '<div class="empty-hint">拖拽任务到这里</div>'}</div>
+    <div class="task-list" data-col="${col.id}">${shown.map((t, i) => cardHTML(t, i)).join('') || '<div class="empty-hint">拖拽任务到这里</div>'}</div>
     ${hidden > 0 ? `<button class="load-more" data-col="${col.id}">还有 ${hidden} 个任务</button>` : ''}
   </section>`;
 }
@@ -409,7 +428,7 @@ function initSortables() {
     group: 'columns',
     handle: '.col-header',
     draggable: '.column',
-    filter: '#add-column, .col-rename-input',
+    filter: '#add-column, .col-rename-input, .col-nav-wrap',
     animation: 150,
     ghostClass: 'drag-ghost',
     onEnd: onColumnMove,
@@ -483,7 +502,7 @@ function loadMoreTasks(colId) {
   const listEl = boardEl.querySelector(`.task-list[data-col="${colId}"]`);
   if (!listEl) return;
   const frag = document.createElement('div');
-  frag.innerHTML = tasks.slice(prev, next).map(cardHTML).join('');
+  frag.innerHTML = tasks.slice(prev, next).map((t, i) => cardHTML(t, prev + i)).join('');
   [...frag.children].forEach(el => listEl.appendChild(el));
   const btn = boardEl.querySelector(`.load-more[data-col="${colId}"]`);
   const hidden = tasks.length - next;
@@ -491,6 +510,29 @@ function loadMoreTasks(colId) {
     if (hidden > 0) btn.textContent = `还有 ${hidden} 个任务`;
     else btn.remove();
   }
+}
+
+function flashCard(cardEl) {
+  cardEl.classList.add('flash');
+  setTimeout(() => cardEl.classList.remove('flash'), 900);
+}
+
+/* 快速导航：滚动到指定主项并高亮；未渲染则先加载 */
+function jumpToTask(colId, taskId) {
+  const tasks = tasksInColumn(colId);
+  const idx = tasks.findIndex(t => t.id === taskId);
+  if (idx < 0) return;
+  const prev = visibleCounts[colId] || PAGE_SIZE;
+  if (idx >= prev) {
+    visibleCounts[colId] = Math.min(idx + 1, tasks.length);
+    render();
+  }
+  const card = boardEl.querySelector(`.task-card[data-id="${taskId}"]`);
+  if (!card) return;
+  const list = boardEl.querySelector(`.task-list[data-col="${colId}"]`);
+  void list?.offsetHeight; // 强制重排，确保新渲染的卡片已布局
+  card.scrollIntoView({ behavior: 'auto', block: 'center' });
+  flashCard(card);
 }
 
 function onSubtaskMove(evt) {
@@ -526,7 +568,16 @@ function addTask(colId, title) {
   const colTasks = state.tasks.filter(x => x.columnId === colId);
   state.tasks = [...state.tasks.filter(x => x.columnId !== colId), t, ...colTasks];
   save();
+  // 新任务排在列底部，确保它被渲染（必要时加载整列）
+  const total = tasksInColumn(colId).length;
+  visibleCounts[colId] = Math.max(visibleCounts[colId] || PAGE_SIZE, total);
   render();
+  const card = boardEl.querySelector(`.task-card[data-id="${t.id}"]`);
+  if (card) {
+    card.scrollIntoView({ behavior: 'auto', block: 'center' });
+    flashCard(card);
+    card.focus({ preventScroll: true });
+  }
 }
 
 function addSubtask(taskId, title) {
@@ -539,6 +590,9 @@ function addSubtask(taskId, title) {
   t.updatedAt = Date.now();
   save();
   render();
+  document.querySelectorAll(`.subtask-row[data-id="${sub.id}"]`).forEach(row => {
+    row.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+  });
 }
 
 function toggleSubtask(subId, done) {
@@ -717,11 +771,11 @@ function hideTip() {
 }
 
 document.addEventListener('mouseover', e => {
-  const el = e.target.closest('.subtask-title');
+  const el = e.target.closest('.subtask-title, .col-nav-item');
   if (el) showTip(el);
 });
 document.addEventListener('mouseout', e => {
-  const el = e.target.closest('.subtask-title');
+  const el = e.target.closest('.subtask-title, .col-nav-item');
   if (el && !(e.relatedTarget && el.contains(e.relatedTarget))) hideTip();
 });
 document.addEventListener('mousedown', hideTip);
@@ -925,6 +979,11 @@ boardEl.addEventListener('click', e => {
     }
     return;
   }
+  const navItem = e.target.closest('.col-nav-item');
+  if (navItem) {
+    jumpToTask(navItem.closest('.column').dataset.id, navItem.dataset.id);
+    return;
+  }
   const colDel = e.target.closest('.col-del');
   if (colDel) {
     deleteColumn(colDel.closest('.column').dataset.id);
@@ -959,7 +1018,13 @@ boardEl.addEventListener('keydown', e => {
     if (v) addTask(e.target.closest('.column').dataset.id, v);
   } else if (e.target.classList.contains('subtask-add-input')) {
     const v = e.target.value.trim();
-    if (v) addSubtask(e.target.closest('.task-card').dataset.id, v);
+    if (v) {
+      const cardId = e.target.closest('.task-card').dataset.id;
+      addSubtask(cardId, v);
+      const card = boardEl.querySelector(`.task-card[data-id="${cardId}"]`);
+      const input = card && card.querySelector('.subtask-add-input');
+      if (input) input.focus();
+    }
   }
 });
 
@@ -1104,7 +1169,10 @@ document.getElementById('d-completion').addEventListener('input', e => {
 document.getElementById('d-subtask-add').addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
   const v = e.target.value.trim();
-  if (v) addSubtask(openTaskId, v);
+  if (v) {
+    addSubtask(openTaskId, v);
+    e.target.value = '';
+  }
 });
 
 const dList = document.getElementById('d-subtask-list');

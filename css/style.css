@@ -125,6 +125,63 @@ body {
   font-family: inherit;
 }
 
+/* ---------- 列快速导航（长列悬停展开） ---------- */
+.col-nav-wrap { position: relative; margin-left: auto; display: flex; align-items: center; }
+.col-nav-wrap + .col-del { margin-left: 0; }
+.col-nav {
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: background 0.12s, color 0.12s;
+}
+.col-nav:hover { background: #e8eaf0; color: var(--text); }
+.col-nav-panel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0;
+  width: 220px;
+  max-height: 340px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-hover);
+  z-index: 45;
+  padding: 6px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease, visibility 0.12s ease;
+}
+.col-nav-panel::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 0;
+  right: 0;
+  height: 6px;
+}
+.col-nav-wrap:hover .col-nav-panel { opacity: 1; visibility: visible; }
+.col-nav-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.col-nav-item {
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  transition: background 0.1s, color 0.1s;
+}
+.col-nav-item:hover { background: var(--accent-soft); color: var(--accent); }
+
 .task-list {
   display: flex;
   flex-direction: column;
@@ -157,18 +214,24 @@ body {
 }
 .task-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-1px); }
 .task-card input { user-select: text; }
+.task-card:focus { outline: none; }
+.task-card.flash { animation: cardFlash 0.9s ease; }
+@keyframes cardFlash {
+  0%, 25% { box-shadow: 0 0 0 3px var(--accent), var(--shadow); }
+  100% { box-shadow: var(--shadow); }
+}
 
 .card-top {
   display: flex;
   align-items: flex-start;
   gap: 7px;
   background: #f4f5f9;
-  background: color-mix(in srgb, var(--col-accent) 8%, #fff);
+  background: var(--card-tint, #f4f5f9);
   border-radius: 7px;
   padding: 5px 8px;
   transition: background 0.15s;
 }
-.task-card:hover .card-top { background: #edeff5; background: color-mix(in srgb, var(--col-accent) 15%, #fff); }
+.task-card:hover .card-top { background: #edeff5; background: var(--card-tint-hover, #edeff5); }
 .task-handle {
   cursor: grab;
   color: #b6bcc9;
