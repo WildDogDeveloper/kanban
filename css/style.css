@@ -1015,27 +1015,27 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
   /* 列排序按钮：移动端列头 ‹ › 左右移动当前列 */
   .col-move { display: inline-block; opacity: 0.8; padding: 4px 9px; font-size: 18px; }
   .col-move:active { background: #e8eaf0; color: var(--text); }
-  /* 任务换列按钮：与标题同一行 [‹] 标题 [›] [⋯]；拖拽栏无功能，移动端隐藏（桌面端手柄保留） */
+  /* 任务换列按钮：与标题同一行 [‹] 标题 [›] [⋯]；拖拽栏无功能，移动端隐藏（桌面端手柄保留）
+     样式随页面：无边框、透明底、浅灰字形（同 ⋯ 按钮）；高度 22px = 标题行高(15px×1.45)，与标题顶部对齐 */
   .task-handle { display: none; }
   .task-move {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex: 0 0 auto;
-    width: 40px;
-    height: 28px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: #fff;
-    color: var(--text-dim);
-    font-size: 18px;
+    height: 22px;
+    border: none;
+    background: none;
+    color: #b6bcc9;
+    font-size: 20px;
     font-weight: 700;
     line-height: 1;
-    padding: 0;
+    padding: 0 7px;
+    border-radius: 6px;
     cursor: pointer;
     -webkit-touch-callout: none;
   }
-  .task-move:active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .task-move:active { background: #e8eaf0; color: var(--text); }
   .task-move:disabled { opacity: 0.35; }
   /* 详情页「移到」按钮行：左右各移一列（弹确认，不跳列） */
   .d-move { display: block; margin: 14px 0 0; }
