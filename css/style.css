@@ -222,6 +222,21 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
 }
 .column:hover .col-del { opacity: 0.7; }
 .col-del:hover { background: #fde8e8; color: var(--danger); }
+/* 列排序按钮（仅移动端显示，见 ≤720px 媒体块） */
+.col-move {
+  display: none;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+/* 详情页「移到」按钮行（仅移动端显示，见 ≤720px 媒体块） */
+.d-move { display: none; }
 .col-rename-input {
   font: inherit;
   font-weight: 700;
@@ -349,6 +364,8 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
 }
 .task-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-1px); }
 .task-card input { user-select: text; }
+/* 移动端长按：抑制系统文本呼出菜单（iOS callout / Android 选择菜单） */
+.task-card, .task-handle, .m-tab, .col-header { -webkit-touch-callout: none; }
 .task-card:focus { outline: none; }
 .task-card.flash { animation: cardFlash 0.9s ease; }
 .task-card.card-active { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
@@ -995,6 +1012,45 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
   .subtask-edit-input,
   .ctx-input,
   .col-nav-filter { font-size: 16px; }
+  /* 列排序按钮：移动端列头 ‹ › 左右移动当前列 */
+  .col-move { display: inline-block; opacity: 0.8; padding: 4px 9px; font-size: 18px; }
+  .col-move:active { background: #e8eaf0; color: var(--text); }
+  /* 明确拖拽区域：任务卡手柄改为左侧全高握把条，常显易抓 */
+  .task-card { position: relative; padding-left: 34px; }
+  .task-handle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 30px;
+    display: grid;
+    place-content: center;
+    padding: 0;
+    opacity: 1;
+    font-size: 15px;
+    color: #9aa3b5;
+    background: #f4f5f9;
+    border-radius: 9px 0 0 9px;
+  }
+  .task-handle:active { background: var(--accent-soft); color: var(--accent); }
+  /* 详情页「移到」按钮行：主任务换列（替代拖卡到 tab） */
+  .d-move { display: block; margin: 14px 0 0; }
+  .d-move-label { font-size: 12px; font-weight: 700; color: var(--text-dim); margin-bottom: 8px; }
+  .d-move-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .d-move-opt {
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text-dim);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+    padding: 9px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 36px;
+  }
+  .d-move-opt:active { background: #e8eaf0; }
+  .d-move-opt.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 700; }
 }
 /* ---------- conflict toast ---------- */
 .conflict-toast {
