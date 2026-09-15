@@ -446,12 +446,10 @@ function cardHTML(t, idx, colIdx = 0) {
   const canRight = colIdx < state.columns.length - 1;
   return `<article class="task-card" data-id="${t.id}" tabindex="-1" style="--card-tint:${tint[0]};--card-tint-hover:${tint[1]}">
     <div class="card-top">
-      <span class="task-handle" title="拖动移动任务">
-        <button type="button" class="task-move" data-dir="-1"${canLeft ? '' : ' disabled'} title="移到左列（相邻一列）">‹</button>
-        <span class="task-grip">⠿</span>
-        <button type="button" class="task-move" data-dir="1"${canRight ? '' : ' disabled'} title="移到右列（相邻一列）">›</button>
-      </span>
+      <span class="task-handle" title="拖动移动任务">⠿</span>
+      <button type="button" class="task-move" data-dir="-1"${canLeft ? '' : ' disabled'} title="移到左列（相邻一列）">‹</button>
       <h3 class="task-title">${esc(t.title)}</h3>
+      <button type="button" class="task-move" data-dir="1"${canRight ? '' : ' disabled'} title="移到右列（相邻一列）">›</button>
       <button class="card-more" title="分配 / 更多">⋯</button>
     </div>
     ${t.description ? `<p class="task-desc">${esc(t.description)}</p>` : ''}
