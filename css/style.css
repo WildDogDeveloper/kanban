@@ -397,6 +397,8 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
 }
 .task-card:hover .task-handle { opacity: 1; }
 .task-handle:active { cursor: grabbing; }
+/* 卡片 ‹ › 换列按钮：桌面端隐藏（移动端见 ≤720px 媒体块） */
+.task-move { display: none; }
 .card-more {
   border: none;
   background: none;
@@ -975,8 +977,6 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
   .m-tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .m-tab-count { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #eef1f6; color: var(--text-dim); }
   .m-tab.active { border-color: var(--tab-accent); color: var(--text); font-weight: 700; }
-  /* 拖拽悬停的目标列高亮 */
-  .m-tab-target { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
   /* 单列视图：只渲染激活列 */
   .board {
     padding: 10px 12px;
@@ -1015,38 +1015,46 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
   /* 列排序按钮：移动端列头 ‹ › 左右移动当前列 */
   .col-move { display: inline-block; opacity: 0.8; padding: 4px 9px; font-size: 18px; }
   .col-move:active { background: #e8eaf0; color: var(--text); }
-  /* 拖拽区域：任务卡手柄改为顶部全宽握把条，左右横滑换列（见 app.js 横滑逻辑） */
+  /* 任务卡顶部控制条：‹ 左移一列 | ⋮⋮⋮ | › 右移一列（弹确认，不跳列；桌面端按钮隐藏） */
   .card-top { flex-wrap: wrap; row-gap: 4px; }
   .task-handle {
     order: -1;
     flex: 1 1 100%;
     display: flex;
     align-items: center;
-    justify-content: center;
-    height: 28px;
+    gap: 6px;
+    height: 36px;
     margin: -5px -8px 0;
-    padding: 0;
+    padding: 0 6px;
     opacity: 1;
-    font-size: 0;
-    color: #8f97a8;
     background: #eceef4;
     border-radius: 7px 7px 0 0;
-    touch-action: pan-y; /* 纵向手势交浏览器滚动（pointercancel 释放），横向手势由 JS 处理 */
     user-select: none;
     -webkit-user-select: none;
   }
-  .task-handle::before { content: "⋮⋮⋮"; font-size: 14px; letter-spacing: 4px; }
-  .task-handle:active { background: var(--accent-soft); color: var(--accent); }
-  /* 横滑换列：卡片跟手 + 目标 tab 高亮（.m-tab-target 见上） */
-  .task-card.swipe-drag {
-    position: relative;
-    z-index: 20;
-    box-shadow: var(--shadow-hover);
-    opacity: 0.95;
-    transition: none;
+  .task-grip { flex: 1; text-align: center; font-size: 0; color: #8f97a8; }
+  .task-grip::before { content: "⋮⋮⋮"; font-size: 14px; letter-spacing: 4px; }
+  .task-move {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 44px;
+    height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text-dim);
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+    -webkit-touch-callout: none;
   }
-  .task-card.swipe-return { transition: transform 0.18s ease-out; }
-  /* 详情页「移到」按钮行：主任务换列（替代拖卡到 tab） */
+  .task-move:active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .task-move:disabled { opacity: 0.35; }
+  /* 详情页「移到」按钮行：左右各移一列（弹确认，不跳列） */
   .d-move { display: block; margin: 14px 0 0; }
   .d-move-label { font-size: 12px; font-weight: 700; color: var(--text-dim); margin-bottom: 8px; }
   .d-move-opts { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -1063,7 +1071,7 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
     min-height: 36px;
   }
   .d-move-opt:active { background: #e8eaf0; }
-  .d-move-opt.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+  .d-move-opt:disabled { opacity: 0.45; }
 }
 /* ---------- conflict toast ---------- */
 .conflict-toast {

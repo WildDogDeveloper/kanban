@@ -422,7 +422,7 @@ function subHTML(s) {
   </li>`;
 }
 
-function cardHTML(t, idx) {
+function cardHTML(t, idx, colIdx = 0) {
   const p = progressOf(t);
   const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
   const pri = t.priority !== 'none' ? `<span class="chip chip-${t.priority}">${PRIORITIES[t.priority]}</span>` : '';
@@ -442,9 +442,15 @@ function cardHTML(t, idx) {
     : '';
   const tags = (t.tags || []).map(tag => `<span class="chip chip-tag">${esc(tag)}</span>`).join('');
   const tint = CARD_TINTS[idx % CARD_TINTS.length];
+  const canLeft = colIdx > 0;
+  const canRight = colIdx < state.columns.length - 1;
   return `<article class="task-card" data-id="${t.id}" tabindex="-1" style="--card-tint:${tint[0]};--card-tint-hover:${tint[1]}">
     <div class="card-top">
-      <span class="task-handle" title="拖动移动任务">⠿</span>
+      <span class="task-handle" title="拖动移动任务">
+        <button type="button" class="task-move" data-dir="-1"${canLeft ? '' : ' disabled'} title="移到左列（相邻一列）">‹</button>
+        <span class="task-grip">⠿</span>
+        <button type="button" class="task-move" data-dir="1"${canRight ? '' : ' disabled'} title="移到右列（相邻一列）">›</button>
+      </span>
       <h3 class="task-title">${esc(t.title)}</h3>
       <button class="card-more" title="分配 / 更多">⋯</button>
     </div>
@@ -496,7 +502,7 @@ function columnHTML(col, idx) {
       ${del}
     </header>
     <input class="task-add-input" placeholder="＋ 添加任务，回车确认" maxlength="200">
-    <div class="task-list" data-col="${col.id}">${shown.map((t, i) => cardHTML(t, i)).join('') || '<div class="empty-hint"><svg class="empty-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>暂无任务，拖拽或输入添加</div>'}</div>
+    <div class="task-list" data-col="${col.id}">${shown.map((t, i) => cardHTML(t, i, idx)).join('') || '<div class="empty-hint"><svg class="empty-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>暂无任务，拖拽或输入添加</div>'}</div>
     ${hidden > 0 ? `<button class="load-more" data-col="${col.id}">还有 ${hidden} 个任务</button>` : ''}
   </section>`;
 }
@@ -655,7 +661,7 @@ function loadMoreTasks(colId) {
   const listEl = boardEl.querySelector(`.task-list[data-col="${colId}"]`);
   if (!listEl) return;
   const frag = document.createElement('div');
-  frag.innerHTML = tasks.slice(prev, next).map((t, i) => cardHTML(t, prev + i)).join('');
+  frag.innerHTML = tasks.slice(prev, next).map((t, i) => cardHTML(t, prev + i, state.columns.findIndex(c => c.id === colId))).join('');
   [...frag.children].forEach(el => listEl.appendChild(el));
   const btn = boardEl.querySelector(`.load-more[data-col="${colId}"]`);
   const hidden = tasks.length - next;
@@ -1006,19 +1012,29 @@ function moveTaskToColumn(taskId, colId) {
   render();
 }
 
-/* 详情页「移到」按钮行（仅移动端显示，桌面端由 CSS 隐藏） */
+/* 详情页「移到」按钮行（仅移动端显示，桌面端由 CSS 隐藏）：左右各移一列（弹确认，不跳列） */
 function renderDetailMove() {
   const opts = document.getElementById('d-move-opts');
   const t = findTask(openTaskId);
   if (!opts || !t) return;
-  opts.innerHTML = state.columns.map(c =>
-    `<button class="d-move-opt${c.id === t.columnId ? ' active' : ''}" data-col="${c.id}">${esc(c.title)}</button>`
-  ).join('');
+  const i = state.columns.findIndex(c => c.id === t.columnId);
+  const left = i > 0 ? state.columns[i - 1] : null;
+  const right = i >= 0 && i < state.columns.length - 1 ? state.columns[i + 1] : null;
+  opts.innerHTML =
+    `<button class="d-move-opt" data-dir="-1"${left ? '' : ' disabled'}>${left ? '‹ ' + esc(left.title) : '‹ 无左列'}</button>` +
+    `<button class="d-move-opt" data-dir="1"${right ? '' : ' disabled'}>${right ? esc(right.title) + ' ›' : '无右列 ›'}</button>`;
 }
 document.getElementById('d-move-opts').addEventListener('click', e => {
   const btn = e.target.closest('.d-move-opt');
-  if (!btn || !openTaskId) return;
-  moveTaskToColumn(openTaskId, btn.dataset.col);
+  if (!btn || btn.disabled || !openTaskId) return;
+  const t = findTask(openTaskId);
+  if (!t) return;
+  const i = state.columns.findIndex(c => c.id === t.columnId);
+  const target = state.columns[i + Number(btn.dataset.dir)];
+  if (!target || t.columnId === target.id) return;
+  if (!confirm(`将「${t.title}」移到「${target.title}」列？`)) return;
+  mobileActiveColId = target.id; // 移完聚焦目标列
+  moveTaskToColumn(t.id, target.id);
 });
 
 /* ================= 长文本悬浮全量展示（tooltip） ================= */
@@ -1302,84 +1318,20 @@ mTabsEl.addEventListener('click', e => {
   render();
 });
 
-function clearTabTarget() {
-  document.querySelectorAll('.m-tab-target').forEach(el => el.classList.remove('m-tab-target'));
-}
-
-/* ================= 移动端左右横滑换列（≤720px：任务卡顶部手柄左右横滑改变所属列） =================
- * 左滑 → 下一列，右滑 → 上一列；换列语义与「移到」按钮一致（moveTaskToColumn）
- * touch-action: pan-y：纵向手势交浏览器滚动（pointercancel 释放横滑），横向手势由我们处理 */
-let swipe = null;
-boardEl.addEventListener('pointerdown', e => {
-  if (swipe) return; // 另一根手指已在横滑
-  if (!matchMedia('(max-width: 720px)').matches) return;
-  if (e.pointerType === 'mouse' && e.button !== 0) return;
-  const handle = e.target.closest('.task-handle');
-  if (!handle) return;
-  const card = handle.closest('.task-card');
+/* ================= 移动端任务左右横移（≤720px：卡片顶部 ‹ › 按钮，弹确认，只移相邻一列，不跳列） ================= */
+boardEl.addEventListener('click', e => {
+  const btn = e.target.closest('.task-move');
+  if (!btn || btn.disabled) return;
+  const card = btn.closest('.task-card');
   const task = card ? findTask(card.dataset.id) : null;
-  const i = task ? state.columns.findIndex(c => c.id === task.columnId) : -1;
-  if (!task || i < 0 || state.columns.length < 2) return;
-  swipe = { card, task, i, startX: e.clientX, startY: e.clientY, dx: 0, active: false, target: -1, pid: e.pointerId };
-  try { handle.setPointerCapture(e.pointerId); } catch { /* 合成事件可能无法捕获，不影响 */ }
+  if (!task) return;
+  const i = state.columns.findIndex(c => c.id === task.columnId);
+  const target = state.columns[i + Number(btn.dataset.dir)];
+  if (!target || task.columnId === target.id) return;
+  if (!confirm(`将「${task.title}」移到「${target.title}」列？`)) return;
+  mobileActiveColId = target.id; // 移完聚焦目标列
+  moveTaskToColumn(task.id, target.id);
 });
-boardEl.addEventListener('pointermove', e => {
-  if (!swipe || e.pointerId !== swipe.pid) return;
-  const dx = e.clientX - swipe.startX;
-  const dy = e.clientY - swipe.startY;
-  if (!swipe.active) {
-    // 确认横向意图：水平位移明显大于垂直；纵向意图则释放，让页面正常滚动
-    if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2) {
-      swipe.active = true;
-      swipe.card.classList.add('swipe-drag');
-    } else if (Math.abs(dy) > 14) {
-      endSwipe(false);
-    }
-    return;
-  }
-  swipe.dx = dx;
-  const t = dx < 0 ? swipe.i + 1 : swipe.i - 1;
-  swipe.target = (t >= 0 && t < state.columns.length) ? t : -1;
-  swipe.card.style.transform = `translateX(${dx * 0.3}px)`;
-  updateSwipeTarget();
-});
-boardEl.addEventListener('pointerup', e => {
-  if (swipe && e.pointerId === swipe.pid) endSwipe(true);
-});
-boardEl.addEventListener('pointercancel', e => {
-  if (swipe && e.pointerId === swipe.pid) endSwipe(false);
-});
-
-function endSwipe(commit) {
-  const s = swipe;
-  swipe = null;
-  if (!s) return;
-  clearTabTarget();
-  if (s.active) {
-    const col = s.target >= 0 ? state.columns[s.target] : null;
-    if (commit && col && s.task.columnId !== col.id && Math.abs(s.dx) > 40) {
-      moveTaskToColumn(s.task.id, col.id); // render() 重建 DOM
-      return;
-    }
-    // 未达阈值：回弹
-    s.card.classList.add('swipe-return');
-    s.card.style.transform = '';
-    setTimeout(() => {
-      s.card.classList.remove('swipe-return');
-      s.card.style.transform = '';
-    }, 200);
-  }
-  s.card.classList.remove('swipe-drag');
-}
-
-/* 横滑中：高亮目标列的 tab */
-function updateSwipeTarget() {
-  clearTabTarget();
-  if (swipe && swipe.active && swipe.target >= 0) {
-    const tab = document.querySelector('.m-tab[data-col-id="' + state.columns[swipe.target].id + '"]');
-    if (tab) tab.classList.add('m-tab-target');
-  }
-}
 
 /* ================= events: board ================= */
 
