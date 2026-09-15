@@ -556,8 +556,9 @@ function destroySortables() {
 /* 触屏设备：子项拖拽改用 ⋯ 按钮作手柄，避免与任务列表纵向滚动冲突 */
 const TOUCH_UI = matchMedia('(hover: none)').matches;
 function initSortables() {
-  // 移动端列排序改用列头 ‹ › 按钮，不建列拖拽实例（单列视图下列拖拽无意义且与按钮冲突）
-  if (!matchMedia('(max-width: 720px)').matches) {
+  const isMobile = matchMedia('(max-width: 720px)').matches;
+  // 列排序：移动端用列头 ‹ › 按钮，不建列拖拽实例（单列视图下列拖拽无意义且与按钮冲突）
+  if (!isMobile) {
     sortables.push(new Sortable(boardEl, {
       group: 'columns',
       handle: '.col-header',
@@ -568,17 +569,19 @@ function initSortables() {
       onEnd: onColumnMove,
     }));
   }
-  boardEl.querySelectorAll('.task-list').forEach(el => {
-    sortables.push(new Sortable(el, {
-      group: 'tasks',
-      handle: '.task-handle',
-      filter: '.empty-hint',
-      animation: 150,
-      ghostClass: 'drag-ghost',
-      onMove: onTaskListMove, // 拖到 tab 栏上方时高亮目标列；回到普通列表时清除高亮
-      onEnd: onTaskMove,
-    }));
-  });
+  // 任务卡：移动端用顶部手柄左右横滑换列（见下方横滑逻辑），不建 Sortable 实例
+  if (!isMobile) {
+    boardEl.querySelectorAll('.task-list').forEach(el => {
+      sortables.push(new Sortable(el, {
+        group: 'tasks',
+        handle: '.task-handle',
+        filter: '.empty-hint',
+        animation: 150,
+        ghostClass: 'drag-ghost',
+        onEnd: onTaskMove,
+      }));
+    });
+  }
   boardEl.querySelectorAll('.subtask-list').forEach(el => {
     sortables.push(new Sortable(el, {
       group: 'subtasks',
@@ -598,26 +601,11 @@ function initSortables() {
       onEnd: onSubtaskMove,
     }));
   }
-  // 移动端：tab 栏作为拖拽目标（只接收任务卡拖入；tab 本身不可拖、不可重排）
-  // 注意：SortableJS 的 onMove/onEnd 只在拖拽源实例（任务列表）上派发，
-  // evt.to 才是落点，所以目标判定在 onTaskListMove / onTaskMove 里做
-  if (matchMedia('(max-width: 720px)').matches) {
-    sortables.push(new Sortable(mTabsEl, {
-      group: { name: 'tasks', put: true, pull: false },
-      sort: false,
-      animation: 0,
-      ghostClass: 'drag-ghost',
-      swapThreshold: 0.9, // 默认 0.5 时 tab 中间 50% 是 no-swap 区,跨列表拖入且指针停在 tab 中部会静默回退;0.9 把 no-swap 区缩到中间 10%
-      filter: '.m-tab', // tab 本身不可作为拖拽起点
-      preventOnFilter: false, // 点按 tab 时不 preventDefault，保证 click 切换列
-    }));
-  }
 }
 
 function onTaskMove(evt) {
   const task = findTask(evt.item.dataset.id);
   if (!task) return;
-  if (evt.to === mTabsEl) { onTabDrop(evt); return; } // 移动端：任务卡落入 tab 栏
   const colEl = evt.to.closest('.column');
   if (!colEl) return;
   const colId = colEl.dataset.id;
@@ -1302,7 +1290,7 @@ document.addEventListener('scroll', () => {
   });
 })();
 
-/* ================= 移动端 tab 列切换（≤720px：tab 栏切换单列视图，拖卡片到 tab 换列） ================= */
+/* ================= 移动端 tab 列切换（≤720px：tab 栏切换单列视图） ================= */
 
 const mTabsEl = document.getElementById('m-tabs');
 
@@ -1314,76 +1302,83 @@ mTabsEl.addEventListener('click', e => {
   render();
 });
 
-/* 从 SortableJS 回调事件取指针坐标（evt 本身没有 clientX/clientY，坐标在 originalEvent）
- * 触摸事件必须优先用 changedTouches：touchend 上 TouchEvent.clientX/clientY 已废弃，
- * 无活动触摸时返回 0，若先读 clientX 会把松手坐标误判为 (0,0) */
-function evtPoint(evt) {
-  if (!evt) return null;
-  const oe = evt.originalEvent || evt;
-  const ct = (oe.changedTouches && oe.changedTouches[oe.changedTouches.length - 1]) || (oe.touches && oe.touches[0]);
-  if (ct) return { x: ct.clientX, y: ct.clientY };
-  if (typeof oe.clientX === 'number' && typeof oe.clientY === 'number') return { x: oe.clientX, y: oe.clientY };
-  return null;
-}
-
-let tabDragX = null; // 指针在 tab 栏上的最后 x 坐标（松手时据此判定目标列）
-function tabAtX(x) {
-  for (const tab of document.querySelectorAll('.m-tab')) {
-    const r = tab.getBoundingClientRect();
-    if (x >= r.left && x <= r.right) return tab;
-  }
-  return null;
-}
 function clearTabTarget() {
   document.querySelectorAll('.m-tab-target').forEach(el => el.classList.remove('m-tab-target'));
 }
 
-/* 任务列表 onMove：SortableJS 只在拖拽源实例上派发 onMove，evt.to 是当前拖悬的列表 */
-function onTaskListMove(evt) {
-  if (evt.to === mTabsEl) return onTabMove(evt); // 拖悬在 tab 栏：高亮目标列
-  clearTabTarget(); // 指针在普通列表上：清除高亮
-  return true;
-}
-
-/* 任务卡拖到 tab 栏上方：高亮目标列 */
-function onTabMove(evt) {
-  const p = evtPoint(evt);
-  if (!p) return true;
-  tabDragX = p.x;
-  const tab = tabAtX(p.x);
-  clearTabTarget();
-  if (tab) tab.classList.add('m-tab-target');
-  return true;
-}
-
-/* 任务卡落入 tab 栏：把任务移到对应列（completedAt / visibleCounts 语义与 onTaskMove 对齐） */
-function onTabDrop(evt) {
-  clearTabTarget();
-  const id = evt.item && evt.item.dataset && evt.item.dataset.id;
-  const task = id ? findTask(id) : null;
-  if (!task) return;
-  const p = evtPoint(evt);
-  // 松手位置不在 tab 栏内（拖到 tab 栏后又拖出去松手）：不移动，仅重建 DOM
-  if (p) {
-    const r = mTabsEl.getBoundingClientRect();
-    if (p.x < r.left || p.x > r.right || p.y < r.top || p.y > r.bottom) { render(); return; }
+/* ================= 移动端左右横滑换列（≤720px：任务卡顶部手柄左右横滑改变所属列） =================
+ * 左滑 → 下一列，右滑 → 上一列；换列语义与「移到」按钮一致（moveTaskToColumn）
+ * touch-action: pan-y：纵向手势交浏览器滚动（pointercancel 释放横滑），横向手势由我们处理 */
+let swipe = null;
+boardEl.addEventListener('pointerdown', e => {
+  if (swipe) return; // 另一根手指已在横滑
+  if (!matchMedia('(max-width: 720px)').matches) return;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  const handle = e.target.closest('.task-handle');
+  if (!handle) return;
+  const card = handle.closest('.task-card');
+  const task = card ? findTask(card.dataset.id) : null;
+  const i = task ? state.columns.findIndex(c => c.id === task.columnId) : -1;
+  if (!task || i < 0 || state.columns.length < 2) return;
+  swipe = { card, task, i, startX: e.clientX, startY: e.clientY, dx: 0, active: false, target: -1, pid: e.pointerId };
+  try { handle.setPointerCapture(e.pointerId); } catch { /* 合成事件可能无法捕获，不影响 */ }
+});
+boardEl.addEventListener('pointermove', e => {
+  if (!swipe || e.pointerId !== swipe.pid) return;
+  const dx = e.clientX - swipe.startX;
+  const dy = e.clientY - swipe.startY;
+  if (!swipe.active) {
+    // 确认横向意图：水平位移明显大于垂直；纵向意图则释放，让页面正常滚动
+    if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      swipe.active = true;
+      swipe.card.classList.add('swipe-drag');
+    } else if (Math.abs(dy) > 14) {
+      endSwipe(false);
+    }
+    return;
   }
-  const x = tabDragX != null ? tabDragX : (p ? p.x : null);
-  tabDragX = null;
-  const tab = x != null ? tabAtX(x) : null;
-  if (!tab) { render(); return; } // 没落到任何 tab 上：不移动，render() 重建 tab 栏清掉残留 DOM
-  const colId = tab.dataset.colId;
-  if (task.columnId === colId) { render(); return; }
-  task.columnId = colId;
-  task.updatedAt = Date.now();
-  const col = state.columns.find(c => c.id === colId);
-  if (col && col.title === DONE_TITLE) task.completedAt = Date.now();
-  else delete task.completedAt;
-  state.tasks = [...state.tasks.filter(t => t.id !== task.id), task];
-  visibleCounts[colId] = Math.max(visibleCounts[colId] || PAGE_SIZE, tasksInColumn(colId).length);
-  markDragged();
-  save();
-  render();
+  swipe.dx = dx;
+  const t = dx < 0 ? swipe.i + 1 : swipe.i - 1;
+  swipe.target = (t >= 0 && t < state.columns.length) ? t : -1;
+  swipe.card.style.transform = `translateX(${dx * 0.3}px)`;
+  updateSwipeTarget();
+});
+boardEl.addEventListener('pointerup', e => {
+  if (swipe && e.pointerId === swipe.pid) endSwipe(true);
+});
+boardEl.addEventListener('pointercancel', e => {
+  if (swipe && e.pointerId === swipe.pid) endSwipe(false);
+});
+
+function endSwipe(commit) {
+  const s = swipe;
+  swipe = null;
+  if (!s) return;
+  clearTabTarget();
+  if (s.active) {
+    const col = s.target >= 0 ? state.columns[s.target] : null;
+    if (commit && col && s.task.columnId !== col.id && Math.abs(s.dx) > 40) {
+      moveTaskToColumn(s.task.id, col.id); // render() 重建 DOM
+      return;
+    }
+    // 未达阈值：回弹
+    s.card.classList.add('swipe-return');
+    s.card.style.transform = '';
+    setTimeout(() => {
+      s.card.classList.remove('swipe-return');
+      s.card.style.transform = '';
+    }, 200);
+  }
+  s.card.classList.remove('swipe-drag');
+}
+
+/* 横滑中：高亮目标列的 tab */
+function updateSwipeTarget() {
+  clearTabTarget();
+  if (swipe && swipe.active && swipe.target >= 0) {
+    const tab = document.querySelector('.m-tab[data-col-id="' + state.columns[swipe.target].id + '"]');
+    if (tab) tab.classList.add('m-tab-target');
+  }
 }
 
 /* ================= events: board ================= */

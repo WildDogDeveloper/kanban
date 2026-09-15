@@ -1015,24 +1015,37 @@ mark { background: #fff3bf; color: inherit; border-radius: 2px; padding: 0 1px; 
   /* 列排序按钮：移动端列头 ‹ › 左右移动当前列 */
   .col-move { display: inline-block; opacity: 0.8; padding: 4px 9px; font-size: 18px; }
   .col-move:active { background: #e8eaf0; color: var(--text); }
-  /* 明确拖拽区域：任务卡手柄改为左侧全高握把条，常显易抓 */
-  .task-card { position: relative; padding-left: 34px; }
+  /* 拖拽区域：任务卡手柄改为顶部全宽握把条，左右横滑换列（见 app.js 横滑逻辑） */
+  .card-top { flex-wrap: wrap; row-gap: 4px; }
   .task-handle {
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 30px;
-    display: grid;
-    place-content: center;
+    order: -1;
+    flex: 1 1 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    margin: -5px -8px 0;
     padding: 0;
     opacity: 1;
-    font-size: 15px;
-    color: #9aa3b5;
-    background: #f4f5f9;
-    border-radius: 9px 0 0 9px;
+    font-size: 0;
+    color: #8f97a8;
+    background: #eceef4;
+    border-radius: 7px 7px 0 0;
+    touch-action: pan-y; /* 纵向手势交浏览器滚动（pointercancel 释放），横向手势由 JS 处理 */
+    user-select: none;
+    -webkit-user-select: none;
   }
+  .task-handle::before { content: "⋮⋮⋮"; font-size: 14px; letter-spacing: 4px; }
   .task-handle:active { background: var(--accent-soft); color: var(--accent); }
+  /* 横滑换列：卡片跟手 + 目标 tab 高亮（.m-tab-target 见上） */
+  .task-card.swipe-drag {
+    position: relative;
+    z-index: 20;
+    box-shadow: var(--shadow-hover);
+    opacity: 0.95;
+    transition: none;
+  }
+  .task-card.swipe-return { transition: transform 0.18s ease-out; }
   /* 详情页「移到」按钮行：主任务换列（替代拖卡到 tab） */
   .d-move { display: block; margin: 14px 0 0; }
   .d-move-label { font-size: 12px; font-weight: 700; color: var(--text-dim); margin-bottom: 8px; }
