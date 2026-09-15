@@ -278,6 +278,10 @@ let sortables = [];
 let openTaskId = null;
 let justDragged = false;
 const visibleCounts = {}; // columnId -> 已渲染任务数
+let mobileActiveColId = null; // 移动端单列视图：当前激活列 ID（无效时回退第一列）
+function activeMobileColId() {
+  return state.columns.some(c => c.id === mobileActiveColId) ? mobileActiveColId : (state.columns[0] && state.columns[0].id);
+}
 
 function markDragged() {
   justDragged = true;
@@ -510,6 +514,15 @@ function renderDetailSubtasks() {
 function render() {
   destroySortables();
   boardEl.innerHTML = state.columns.map((col, i) => columnHTML(col, i)).join('');
+  // 移动端单列视图：高亮激活列 + 渲染 tab 栏（桌面端 .m-tabs 为 display:none，无副作用）
+  const activeColEl = boardEl.querySelector('.column[data-id="' + activeMobileColId() + '"]');
+  if (activeColEl) activeColEl.classList.add('m-active');
+  mTabsEl.innerHTML = state.columns.map((col, i) => {
+    const done = col.title === DONE_TITLE;
+    const accent = done ? DONE_ACCENT : ACCENTS[i % ACCENTS.length];
+    const count = tasksInColumn(col.id).length;
+    return '<button class="m-tab' + (col.id === activeMobileColId() ? ' active' : '') + '" data-col-id="' + col.id + '" style="--tab-accent:' + accent + '"><span class="m-tab-dot"></span><span class="m-tab-title">' + esc(col.title) + '</span><span class="m-tab-count">' + count + '</span></button>';
+  }).join('');
   if (openTaskId) renderDetailSubtasks();
   renderDiscarded();
   initSortables();
@@ -539,6 +552,8 @@ function destroySortables() {
   sortables = [];
 }
 
+/* 触屏设备：子项拖拽改用 ⋯ 按钮作手柄，避免与任务列表纵向滚动冲突 */
+const TOUCH_UI = matchMedia('(hover: none)').matches;
 function initSortables() {
   sortables.push(new Sortable(boardEl, {
     group: 'columns',
@@ -556,12 +571,14 @@ function initSortables() {
       filter: '.empty-hint',
       animation: 150,
       ghostClass: 'drag-ghost',
+      onMove: onTaskListMove, // 拖到 tab 栏上方时高亮目标列；回到普通列表时清除高亮
       onEnd: onTaskMove,
     }));
   });
   boardEl.querySelectorAll('.subtask-list').forEach(el => {
     sortables.push(new Sortable(el, {
       group: 'subtasks',
+      handle: TOUCH_UI ? '.subtask-more' : undefined,
       animation: 150,
       ghostClass: 'drag-ghost',
       onEnd: onSubtaskMove,
@@ -570,18 +587,35 @@ function initSortables() {
   if (openTaskId) {
     sortables.push(new Sortable(document.getElementById('d-subtask-list'), {
       group: 'subtasks',
+      handle: TOUCH_UI ? '.subtask-more' : undefined,
       filter: '.d-empty',
       animation: 150,
       ghostClass: 'drag-ghost',
       onEnd: onSubtaskMove,
     }));
   }
+  // 移动端：tab 栏作为拖拽目标（只接收任务卡拖入；tab 本身不可拖、不可重排）
+  // 注意：SortableJS 的 onMove/onEnd 只在拖拽源实例（任务列表）上派发，
+  // evt.to 才是落点，所以目标判定在 onTaskListMove / onTaskMove 里做
+  if (matchMedia('(max-width: 720px)').matches) {
+    sortables.push(new Sortable(mTabsEl, {
+      group: { name: 'tasks', put: true, pull: false },
+      sort: false,
+      animation: 0,
+      ghostClass: 'drag-ghost',
+      swapThreshold: 0.9, // 默认 0.5 时 tab 中间 50% 是 no-swap 区,跨列表拖入且指针停在 tab 中部会静默回退;0.9 把 no-swap 区缩到中间 10%
+      filter: '.m-tab', // tab 本身不可作为拖拽起点
+      preventOnFilter: false, // 点按 tab 时不 preventDefault，保证 click 切换列
+    }));
+  }
 }
 
 function onTaskMove(evt) {
   const task = findTask(evt.item.dataset.id);
+  if (!task) return;
+  if (evt.to === mTabsEl) { onTabDrop(evt); return; } // 移动端：任务卡落入 tab 栏
   const colEl = evt.to.closest('.column');
-  if (!task || !colEl) return;
+  if (!colEl) return;
   const colId = colEl.dataset.id;
   task.columnId = colId;
   task.updatedAt = Date.now();
@@ -822,6 +856,7 @@ function deleteColumn(colId) {
   state.columns = state.columns.filter(c => c.id !== colId);
   save();
   render();
+  if (mobileActiveColId === colId) mobileActiveColId = null; // 删除当前列后回退第一列（activeMobileColId() 兜底）
 }
 
 function discardTask(taskId) {
@@ -894,7 +929,7 @@ function closeDiscarded() {
 
 /* ================= detail panel ================= */
 
-function openDetail(taskId) {
+function openDetail(taskId, subId = null) {
   const t = findTask(taskId);
   if (!t) return;
   clearActiveCard();
@@ -917,6 +952,22 @@ function openDetail(taskId) {
   detailEl.classList.add('open');
   syncBackdrop();
   updateScrollFades();
+  // 定位：从子项位置打开则滚动到该子项并高亮，否则滚动到顶部
+  const body = document.querySelector('#detail .detail-body');
+  if (body) {
+    if (subId) {
+      const row = body.querySelector(`.subtask-row[data-id="${subId}"]`);
+      if (row) {
+        const bodyRect = body.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        body.scrollTop += rowRect.top - bodyRect.top - body.clientHeight / 2 + row.clientHeight / 2;
+        row.classList.add('sub-flash');
+        setTimeout(() => row.classList.remove('sub-flash'), 900);
+        return;
+      }
+    }
+    body.scrollTop = 0;
+  }
 }
 
 function closeDetail() {
@@ -1148,6 +1199,135 @@ document.addEventListener('scroll', () => {
   if (ctxMenu.classList.contains('open')) closeAssignMenu();
 }, true);
 
+/* ================= 移动端顶栏溢出菜单（≤720px 显示 ⋮；条目转发点击给原按钮） ================= */
+
+(function initMobileMenu() {
+  const btn = document.getElementById('mobile-menu-btn');
+  if (!btn) return;
+  const ITEMS = [
+    ['add-column', '新建列'],
+    ['discarded-btn', '废弃任务'],
+    ['export-btn', '导出 JSON 备份'],
+    ['import-btn', '导入 JSON 备份'],
+    ['ai-btn', 'AI 说明'],
+  ];
+  const menu = document.createElement('div');
+  menu.className = 'ctx-menu';
+  ITEMS.forEach(([id, label]) => {
+    const el = document.createElement('div');
+    el.className = 'ctx-item';
+    el.textContent = label;
+    el.addEventListener('click', () => {
+      menu.classList.remove('open');
+      document.getElementById(id).click();
+    });
+    menu.appendChild(el);
+  });
+  document.body.appendChild(menu);
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (menu.classList.contains('open')) {
+      menu.classList.remove('open');
+      return;
+    }
+    menu.classList.add('open');
+    const r = btn.getBoundingClientRect();
+    const w = menu.offsetWidth;
+    menu.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + 'px';
+    menu.style.top = r.bottom + 6 + 'px';
+  });
+  document.addEventListener('click', e => {
+    if (menu.classList.contains('open') && !menu.contains(e.target)) menu.classList.remove('open');
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') menu.classList.remove('open');
+  });
+})();
+
+/* ================= 移动端 tab 列切换（≤720px：tab 栏切换单列视图，拖卡片到 tab 换列） ================= */
+
+const mTabsEl = document.getElementById('m-tabs');
+
+// 点击 tab 切换激活列（事件委托，只绑一次；tab 栏 innerHTML 每次 render 重建）
+mTabsEl.addEventListener('click', e => {
+  const tab = e.target.closest('.m-tab');
+  if (!tab) return;
+  mobileActiveColId = tab.dataset.colId;
+  render();
+});
+
+/* 从 SortableJS 回调事件取指针坐标（evt 本身没有 clientX/clientY，坐标在 originalEvent）
+ * 触摸事件必须优先用 changedTouches：touchend 上 TouchEvent.clientX/clientY 已废弃，
+ * 无活动触摸时返回 0，若先读 clientX 会把松手坐标误判为 (0,0) */
+function evtPoint(evt) {
+  if (!evt) return null;
+  const oe = evt.originalEvent || evt;
+  const ct = (oe.changedTouches && oe.changedTouches[oe.changedTouches.length - 1]) || (oe.touches && oe.touches[0]);
+  if (ct) return { x: ct.clientX, y: ct.clientY };
+  if (typeof oe.clientX === 'number' && typeof oe.clientY === 'number') return { x: oe.clientX, y: oe.clientY };
+  return null;
+}
+
+let tabDragX = null; // 指针在 tab 栏上的最后 x 坐标（松手时据此判定目标列）
+function tabAtX(x) {
+  for (const tab of document.querySelectorAll('.m-tab')) {
+    const r = tab.getBoundingClientRect();
+    if (x >= r.left && x <= r.right) return tab;
+  }
+  return null;
+}
+function clearTabTarget() {
+  document.querySelectorAll('.m-tab-target').forEach(el => el.classList.remove('m-tab-target'));
+}
+
+/* 任务列表 onMove：SortableJS 只在拖拽源实例上派发 onMove，evt.to 是当前拖悬的列表 */
+function onTaskListMove(evt) {
+  if (evt.to === mTabsEl) return onTabMove(evt); // 拖悬在 tab 栏：高亮目标列
+  clearTabTarget(); // 指针在普通列表上：清除高亮
+  return true;
+}
+
+/* 任务卡拖到 tab 栏上方：高亮目标列 */
+function onTabMove(evt) {
+  const p = evtPoint(evt);
+  if (!p) return true;
+  tabDragX = p.x;
+  const tab = tabAtX(p.x);
+  clearTabTarget();
+  if (tab) tab.classList.add('m-tab-target');
+  return true;
+}
+
+/* 任务卡落入 tab 栏：把任务移到对应列（completedAt / visibleCounts 语义与 onTaskMove 对齐） */
+function onTabDrop(evt) {
+  clearTabTarget();
+  const id = evt.item && evt.item.dataset && evt.item.dataset.id;
+  const task = id ? findTask(id) : null;
+  if (!task) return;
+  const p = evtPoint(evt);
+  // 松手位置不在 tab 栏内（拖到 tab 栏后又拖出去松手）：不移动，仅重建 DOM
+  if (p) {
+    const r = mTabsEl.getBoundingClientRect();
+    if (p.x < r.left || p.x > r.right || p.y < r.top || p.y > r.bottom) { render(); return; }
+  }
+  const x = tabDragX != null ? tabDragX : (p ? p.x : null);
+  tabDragX = null;
+  const tab = x != null ? tabAtX(x) : null;
+  if (!tab) { render(); return; } // 没落到任何 tab 上：不移动，render() 重建 tab 栏清掉残留 DOM
+  const colId = tab.dataset.colId;
+  if (task.columnId === colId) { render(); return; }
+  task.columnId = colId;
+  task.updatedAt = Date.now();
+  const col = state.columns.find(c => c.id === colId);
+  if (col && col.title === DONE_TITLE) task.completedAt = Date.now();
+  else delete task.completedAt;
+  state.tasks = [...state.tasks.filter(t => t.id !== task.id), task];
+  visibleCounts[colId] = Math.max(visibleCounts[colId] || PAGE_SIZE, tasksInColumn(colId).length);
+  markDragged();
+  save();
+  render();
+}
+
 /* ================= events: board ================= */
 
 boardEl.addEventListener('click', e => {
@@ -1190,7 +1370,8 @@ boardEl.addEventListener('click', e => {
   }
   const card = e.target.closest('.task-card');
   if (card && !e.target.closest('input, button, .task-handle')) {
-    openDetail(card.dataset.id);
+    const subRow = e.target.closest('.subtask-row');
+    openDetail(card.dataset.id, subRow ? subRow.dataset.id : null);
   }
 });
 
@@ -1231,12 +1412,11 @@ boardEl.addEventListener('keydown', e => {
   }
 });
 
-boardEl.addEventListener('dblclick', e => {
-  const titleEl = e.target.closest('.col-title');
-  if (!titleEl) return;
-  const colEl = titleEl.closest('.column');
+function startColRename(colEl) {
   const col = state.columns.find(c => c.id === colEl.dataset.id);
   if (!col || col.title === DONE_TITLE) return;
+  const titleEl = colEl.querySelector('.col-title');
+  if (!titleEl) return;
   const input = document.createElement('input');
   input.className = 'col-rename-input';
   input.value = col.title;
@@ -1251,6 +1431,58 @@ boardEl.addEventListener('dblclick', e => {
     const v = input.value.trim();
     if (v) col.title = v;
     save();
+    render();
+  };
+  input.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') commit();
+    else if (ev.key === 'Escape') { settled = true; render(); }
+  });
+  input.addEventListener('blur', commit);
+}
+
+boardEl.addEventListener('dblclick', e => {
+  const titleEl = e.target.closest('.col-title');
+  if (!titleEl) return;
+  startColRename(titleEl.closest('.column'));
+});
+
+/* 触屏无双击：点按列标题直接重命名 */
+if (TOUCH_UI) {
+  boardEl.addEventListener('click', e => {
+    if (justDragged) return;
+    const titleEl = e.target.closest('.col-title');
+    if (!titleEl) return;
+    startColRename(titleEl.closest('.column'));
+  });
+}
+
+/* 双击子项标题就地编辑（看板卡片 + 详情面板通用）；已完成的子项需先取消完成才可编辑 */
+document.addEventListener('dblclick', e => {
+  if (justDragged) return;
+  const titleEl = e.target.closest('.subtask-title');
+  if (!titleEl) return;
+  const row = titleEl.closest('.subtask-row');
+  if (!row) return;
+  const f = findSubtask(row.dataset.id);
+  if (!f || f.sub.done) return; // 已完成的子项不允许编辑
+  hideTip();
+  const input = document.createElement('input');
+  input.className = 'subtask-edit-input';
+  input.value = f.sub.title;
+  input.maxLength = 200;
+  titleEl.replaceWith(input);
+  input.focus();
+  input.select();
+  let settled = false;
+  const commit = () => {
+    if (settled) return;
+    settled = true;
+    const v = input.value.trim();
+    if (v && v !== f.sub.title) {
+      f.sub.title = v;
+      f.task.updatedAt = Date.now();
+      save();
+    }
     render();
   };
   input.addEventListener('keydown', ev => {
@@ -1452,6 +1684,8 @@ document.getElementById('d-subtask-add').addEventListener('keydown', e => {
   if (v) {
     addSubtask(openTaskId, v);
     e.target.value = '';
+    const body = document.querySelector('#detail .detail-body');
+    if (body) body.scrollTop = body.scrollHeight;
   }
 });
 
@@ -1474,6 +1708,8 @@ document.getElementById('add-column').addEventListener('click', () => {
   const title = prompt('列名称', '新列');
   if (title && title.trim()) {
     state.columns.push({ id: uid(), title: title.trim() });
+    const newCol = state.columns[state.columns.length - 1];
+    if (matchMedia('(max-width: 720px)').matches) mobileActiveColId = newCol.id; // 移动端新建列后自动切到新列
     save();
     render();
   }

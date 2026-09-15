@@ -24,6 +24,7 @@
     </div>
     <div class="topbar-actions">
       <span id="conn" class="conn off">…</span>
+      <button id="mobile-menu-btn" class="icon-btn mobile-menu-btn" aria-label="更多操作" title="更多操作">⋮</button>
       <button id="add-column" class="btn" title="新建列">＋ 新建列</button>
       <button id="discarded-btn" class="btn" title="查看废弃任务">废弃 <span id="disc-count">0</span></button>
       <button id="export-btn" class="btn" title="导出 JSON 备份">导出</button>
@@ -32,6 +33,8 @@
       <input type="file" id="import-file" accept=".json,application/json" hidden>
     </div>
   </header>
+
+  <nav id="m-tabs" class="m-tabs" aria-label="列切换"></nav>
 
   <main id="board" class="board"></main>
 
