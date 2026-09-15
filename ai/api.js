@@ -30,6 +30,18 @@
 
 const MAX_BODY = 5 * 1024 * 1024; // 5MB
 
+/* 逾期判断用的「今天」时区：服务器常为 UTC，默认按用户当地（中国大陆） */
+const DIGEST_TZ = process.env.KANBAN_TZ || 'Asia/Shanghai';
+function localToday() {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: DIGEST_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
 /* ---------- 资源级 API（语义与前端一致） ---------- */
 
 class ApiError extends Error {
@@ -150,7 +162,7 @@ module.exports = {
 
     function buildDigest(state) {
       const row = stmtGet.get('board');
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localToday();
       const columns = state.columns.map(col => {
         const tasks = apiTasksInColumn(state, col.id);
         const isDone = col.title === API_DONE_TITLE;

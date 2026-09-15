@@ -10,8 +10,9 @@
 - **代码目录**：`/opt/kanban`（**scp 部署，非 git 仓库**）
 - **服务**：`systemctl restart kanban`（`PORT=8787`）
 - **访问**：`http://108.186.246.232:8787/`
+- **看板登录**：`admin` / `admin321`（登录后 token 有效期 7 天，期内免登；顶栏「退出」可登出）。账号密码可用 systemd 的 `KANBAN_USER`/`KANBAN_PASS` 环境变量覆盖
 - **数据**：`/opt/kanban/kanban.db`（备份 = 复制此文件）
-- **AI 接口**：`/ai/` 前缀，同 8787（无独立进程，见下文「AI 接口」）
+- **AI 接口**：`/ai/` 前缀，同 8787（无独立进程，见下文「AI 接口」）；除 `/ai/health` 外需 AI token（systemd `KANBAN_TOKEN` 环境变量，值见「AI 接口 → 鉴权」）
 
 ### 更新代码（本地执行：上库 → scp → 重启 → 验证）
 
@@ -53,11 +54,21 @@ AI 功能与主服务**功能文件解耦**：AI 逻辑全在独立模块 `ai/ap
 - `mcp/server.js` — MCP 服务器（stdio，零依赖），把 API 包装成 13 个结构化工具
 - `kanban.js` — CLI（终端 AI / 脚本 / cron 入口）
 
-### AI API 端点（8787，/ai/ 前缀）
+### 鉴权
+
+看板开了登录（`admin`/`admin321`，可用 `KANBAN_USER`/`KANBAN_PASS` 覆盖），AI 接口用静态 token：
+
+- **AI token**：`kb-74941d36bfa6db6714efd80de767c031`（= systemd 的 `KANBAN_TOKEN` 环境变量；前端「AI 说明」面板里也印着，复制给 AI 时自带）
+- **用法**：MCP/CLI 配 `KANBAN_TOKEN` 环境变量（自动带 `Authorization: Bearer <token>` 头）；REST 直接带请求头 `Authorization: Bearer <token>`（或 `x-kanban-token: <token>`）
+- **免鉴权**：仅 `/ai/health`
+- 看板浏览器登录（`/api/login`）签发的 token 同样可调 `/ai/` 接口（有效期 7 天）
+- 改 token：换 `KANBAN_TOKEN` 环境变量 + 重启，并同步更新前端 `js/app.js` 顶部的 `AI_TOKEN` 常量
+
+### AI API 端点（8787，/ai/ 前缀，除 health 外均需 token）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/ai/health` | 健康检查 |
+| GET | `/ai/health` | 健康检查（免鉴权） |
 | GET | `/ai/digest` | 看板概览：列/任务/进度/逾期/统计（AI 读板首选） |
 | GET | `/ai/search?q=` | 搜索任务与子项（多词空格分隔，全部需命中） |
 | GET | `/ai/columns` | 列列表（含任务数） |
@@ -81,7 +92,7 @@ AI 功能与主服务**功能文件解耦**：AI 逻辑全在独立模块 `ai/ap
     "kanban": {
       "command": "node",
       "args": ["/opt/kanban/mcp/server.js"],
-      "env": { "KANBAN_URL": "http://108.186.246.232:8787" }
+      "env": { "KANBAN_URL": "http://108.186.246.232:8787", "KANBAN_TOKEN": "kb-74941d36bfa6db6714efd80de767c031" }
     }
   }
 }
@@ -93,6 +104,7 @@ AI 功能与主服务**功能文件解耦**：AI 逻辑全在独立模块 `ai/ap
 
 ```bash
 export KANBAN_URL=http://108.186.246.232:8787
+export KANBAN_TOKEN=kb-74941d36bfa6db6714efd80de767c031   # AI 鉴权 token
 node kanban.js digest                          # 看板概览
 node kanban.js search 关键词                    # 搜索任务/子项
 node kanban.js add-task <列ID> <标题> --prio high --due 2026-10-01
@@ -108,10 +120,14 @@ node kanban.js help                            # 全部命令；加 --json 输�
 # 传 AI 相关文件（server.js 有改动时一并传）
 scp -r -o StrictHostKeyChecking=accept-new ai mcp root@108.186.246.232:/opt/kanban/
 scp -o StrictHostKeyChecking=accept-new kanban.js package.json root@108.186.246.232:/opt/kanban/
+# 前端有改动（登录界面/AI 说明等）时一并传
+scp -o StrictHostKeyChecking=accept-new index.html root@108.186.246.232:/opt/kanban/
+scp -o StrictHostKeyChecking=accept-new css/style.css root@108.186.246.232:/opt/kanban/css/style.css
+scp -o StrictHostKeyChecking=accept-new js/app.js root@108.186.246.232:/opt/kanban/js/app.js
 ssh root@108.186.246.232 "systemctl restart kanban && systemctl is-active kanban && curl -s http://127.0.0.1:8787/ai/health"
 ```
 
-> 无认证（与主服务一致：仅可信网络使用）。AI 入口是 MCP/CLI（非浏览器客户端），未配 CORS；如以后要跨域浏览器 AI 工具，再扩 server.js 的 OPTIONS allow-methods。
+> AI 接口需 token（见上文「鉴权」）；浏览器端点 `/api/state` 需登录 token。AI 入口是 MCP/CLI（非浏览器客户端），未配 CORS；如以后要跨域浏览器 AI 工具，再扩 server.js 的 OPTIONS allow-methods。
 
 ## 1. 服务器装 Node
 
@@ -150,8 +166,11 @@ Description=Kanban Board
 After=network.target
 
 [Service]
+Environment=KANBAN_USER=admin
+Environment=KANBAN_PASS=admin321
+Environment=KANBAN_TOKEN=kb-74941d36bfa6db6714efd80de767c031
+Environment=KANBAN_TZ=Asia/Shanghai
 Environment=PORT=8787
-ExecStart=/usr/bin/node /opt/kanban/server.js
 Restart=always
 
 [Install]
@@ -196,6 +215,7 @@ systemctl restart kanban
 
 ## 安全提醒
 
-- 服务**无认证**：能访问到 IP+端口的人即可查看和修改看板，只在可信网络使用
+- 服务**有登录**（`admin`/`admin321`，systemd `KANBAN_USER`/`KANBAN_PASS` 可覆盖）：未登录只能看到登录页，拿不到看板数据；AI 接口另需 AI token
+- 登录 token 有效期 7 天（浏览器 localStorage），到期自动要求重新登录
 - IP 直连是 HTTP 明文（无域名就没有 HTTPS）；以后想上域名 + HTTPS，加一层 nginx + certbot 反代即可，应用本身不用改
 - 只开必要端口（8787），SSH 建议密钥登录

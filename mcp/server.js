@@ -9,12 +9,13 @@
  *     "kanban": {
  *       "command": "node",
  *       "args": ["D:/AI/kanban/mcp/server.js"],
- *       "env": { "KANBAN_URL": "http://108.186.246.232:8787" }
+ *       "env": { "KANBAN_URL": "http://108.186.246.232:8787", "KANBAN_TOKEN": "<AI token>" }
  *     }
  *   }
  *
  * 环境变量：
- *   KANBAN_URL  看板 AI API 地址（主服务 /ai/ 前缀），默认 http://127.0.0.1:8787
+ *   KANBAN_URL    看板 AI API 地址（主服务 /ai/ 前缀），默认 http://127.0.0.1:8787
+ *   KANBAN_TOKEN  AI 接口鉴权 token（服务端 KANBAN_TOKEN 环境变量同值），带 Authorization 头发送
  */
 
 const http = require('node:http');
@@ -22,6 +23,7 @@ const https = require('node:https');
 const { URL } = require('node:url');
 
 const BASE = (process.env.KANBAN_URL || 'http://127.0.0.1:8787').replace(/\/$/, '');
+const TOKEN = process.env.KANBAN_TOKEN || '';
 
 function apiRequest(method, path, body) {
   return new Promise((resolve, reject) => {
@@ -32,6 +34,7 @@ function apiRequest(method, path, body) {
       method,
       headers: {
         'content-type': 'application/json',
+        ...(TOKEN ? { authorization: 'Bearer ' + TOKEN } : {}),
         ...(payload ? { 'content-length': Buffer.byteLength(payload) } : {}),
       },
     }, res => {

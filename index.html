@@ -30,6 +30,7 @@
       <button id="export-btn" class="btn" title="导出 JSON 备份">导出</button>
       <button id="import-btn" class="btn" title="从 JSON 备份导入">导入</button>
       <button id="ai-btn" class="btn" title="AI 看板使用说明（点击复制，粘贴给 AI 助手即可操作看板）">AI 说明</button>
+      <button id="logout-btn" class="btn" title="退出登录（本浏览器 7 天内免登）">退出</button>
       <input type="file" id="import-file" accept=".json,application/json" hidden>
     </div>
   </header>
@@ -122,6 +123,28 @@
       <button id="ai-help-copy" class="btn accent">复制使用说明</button>
     </div>
   </aside>
+  <!-- 登录界面：服务器在线但无有效 token 时显示（全屏覆盖，7 天内免登） -->
+  <div id="login" class="login" hidden>
+    <form id="login-form" class="login-card" novalidate>
+      <div class="brand login-brand">
+        <span class="brand-dot"></span>
+        <h1>任务看板</h1>
+      </div>
+      <p class="login-sub">请输入账号登录以加载看板</p>
+      <label class="login-field">
+        <span>用户名</span>
+        <input id="login-user" autocomplete="username" spellcheck="false">
+      </label>
+      <label class="login-field">
+        <span>密码</span>
+        <input id="login-pass" type="password" autocomplete="current-password">
+      </label>
+      <button type="submit" class="btn accent login-submit">登 录</button>
+      <p id="login-error" class="login-error" hidden></p>
+      <p class="login-hint">登录后 7 天内本浏览器免登；顶栏「退出」可主动登出</p>
+    </form>
+  </div>
+
 
   <script src="js/sortable.min.js"></script>
   <script src="js/app.js"></script>

@@ -3,6 +3,9 @@
 /* ================= state ================= */
 
 const STORAGE_KEY = 'kanban.state.v1';
+const AUTH_KEY = 'kanban.auth.v1';
+/* AI 接口 token：与服务端 KANBAN_TOKEN 环境变量同值，随「AI 说明」文档发给 AI */
+const AI_TOKEN = 'kb-74941d36bfa6db6714efd80de767c031';
 const PRIORITIES = { none: '无', low: '低', medium: '中', high: '高' };
 const ACCENTS = ['#4f6ef7', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#ef4444'];
 /* 主项标题栏底色：相邻卡片错色（淡色），[常态, 悬停] */
@@ -79,8 +82,33 @@ function load() {
 
 let state = null; // assigned in boot()
 
+/* ---- 登录 token（7 天有效，存 localStorage；到期或 401 时重新登录） ---- */
+let authToken = null; // {token, expiresAt}
+function loadAuthToken() {
+  try {
+    const raw = localStorage.getItem(AUTH_KEY);
+    if (!raw) return null;
+    const a = JSON.parse(raw);
+    if (a && typeof a.token === 'string' && Number(a.expiresAt) > Date.now()) return a;
+  } catch { /* 损坏则重登 */ }
+  return null;
+}
+function saveAuthToken(a) {
+  authToken = a;
+  try {
+    if (a) localStorage.setItem(AUTH_KEY, JSON.stringify(a));
+    else localStorage.removeItem(AUTH_KEY);
+  } catch { /* 忽略 */ }
+}
+function authHeaderObj() {
+  return authToken && Number(authToken.expiresAt) > Date.now()
+    ? { authorization: 'Bearer ' + authToken.token } : {};
+}
+
 function apiFetch(path, opts = {}) {
-  return fetch(path, Object.assign({ cache: 'no-store' }, opts));
+  const o = Object.assign({ cache: 'no-store' }, opts);
+  o.headers = Object.assign({}, authHeaderObj(), opts.headers || {});
+  return fetch(path, o);
 }
 
 let serverMode = false;
@@ -88,6 +116,8 @@ let serverUpdatedAt = 0;
 let localDirty = false;
 let pushTimer = null;
 let pushRetryTimer = null;
+let needLogin = false; // 服务器在线但未登录（无有效 token）
+let pollStarted = false;
 
 function save() {
   try {
@@ -110,7 +140,14 @@ async function pushToServer() {
       headers: { 'content-type': 'application/json', 'if-match': String(serverUpdatedAt) },
       body: JSON.stringify(state),
     });
-    const data = await r.json();
+    const data = await r.json().catch(() => null);
+    if (r.status === 401) {
+      needLogin = true;
+      localDirty = false; // 重新登录后以服务器状态为准（与 409 语义一致）
+      updateConnUI();
+      showLogin('登录已失效，请重新登录');
+      return;
+    }
     if (r.status === 409) {
       if (data && data.state) {
         adoptServerState(data.state, data.updatedAt);
@@ -157,9 +194,15 @@ function adoptServerState(newState, newUpdatedAt) {
 }
 
 async function pollServer() {
-  if (!serverMode || localDirty || document.visibilityState !== 'visible') return;
+  if (!serverMode || localDirty || needLogin || document.visibilityState !== 'visible') return;
   try {
     const r = await apiFetch('/api/state');
+    if (r.status === 401) {
+      needLogin = true;
+      updateConnUI();
+      showLogin('登录已失效，请重新登录');
+      return;
+    }
     const data = await r.json();
     if (data && data.updatedAt && data.updatedAt !== serverUpdatedAt) {
       if (data.state) adoptServerState(data.state, data.updatedAt);
@@ -171,24 +214,32 @@ async function pollServer() {
   }
 }
 
-async function initFromServer() {
+/* 拉取服务器看板状态；401 返回 {unauth:true}，服务器不可达返回 {unauth:false, state:null, serverMode:false} */
+async function fetchServerState() {
   try {
     const r = await apiFetch('/api/state');
+    if (r.status === 401) return { unauth: true, state: null };
     if (!r.ok) throw new Error(String(r.status));
     const data = await r.json();
     if (!data || data.ok === false) throw new Error('bad response');
     serverMode = true;
     serverUpdatedAt = data.updatedAt || 0;
-    return data.state || null;
+    return { unauth: false, state: data.state || null };
   } catch {
     serverMode = false;
-    return null;
+    return { unauth: false, state: null };
   }
 }
 
 function updateConnUI() {
   const el = document.getElementById('conn');
   if (!el) return;
+  if (needLogin) {
+    el.textContent = '未登录';
+    el.className = 'conn off';
+    el.title = '服务器在线但未登录（token 缺失或已过期）';
+    return;
+  }
   if (serverMode) {
     el.textContent = '已连接服务器';
     el.className = 'conn on';
@@ -197,6 +248,97 @@ function updateConnUI() {
     el.textContent = '本地模式';
     el.className = 'conn off';
     el.title = '未连接服务器（node server.js），数据仅保存在本浏览器';
+  }
+}
+
+/* ================= 登录界面（7 天免登） ================= */
+
+const loginEl = document.getElementById('login');
+const loginForm = document.getElementById('login-form');
+
+function showLogin(msg) {
+  const err = document.getElementById('login-error');
+  if (msg) { err.textContent = msg; err.hidden = false; }
+  loginEl.hidden = false;
+  const userIn = document.getElementById('login-user');
+  (userIn && userIn.value ? document.getElementById('login-pass') : userIn).focus();
+}
+function hideLogin() { loginEl.hidden = true; }
+
+loginForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  const user = document.getElementById('login-user').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  if (!user || !pass) return;
+  const btn = loginForm.querySelector('button[type=submit]');
+  btn.disabled = true;
+  btn.textContent = '登录中…';
+  const res = await doLogin(user, pass);
+  btn.disabled = false;
+  btn.textContent = '登 录';
+  if (res.ok) {
+    document.getElementById('login-pass').value = '';
+    document.getElementById('login-error').hidden = true;
+  } else {
+    const err = document.getElementById('login-error');
+    if (res.error) { err.textContent = res.error; err.hidden = false; }
+    const p = document.getElementById('login-pass');
+    p.focus();
+    p.select();
+  }
+});
+
+document.getElementById('logout-btn').addEventListener('click', async () => {
+  if (serverMode && authToken) {
+    try { await apiFetch('/api/logout', { method: 'POST' }); } catch { /* 忽略 */ }
+  }
+  saveAuthToken(null);
+  location.reload();
+});
+
+/* 登录成功后拉取服务器状态并进入看板 */
+async function doLogin(username, password) {
+  let data = null;
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    data = await r.json().catch(() => null);
+    if (r.status === 401) return { ok: false, error: (data && data.error) || '用户名或密码错误' };
+    if (!r.ok || !data || !data.ok || !data.token) return { ok: false, error: (data && data.error) || `登录失败（HTTP ${r.status}）` };
+  } catch {
+    return { ok: false, error: '无法连接服务器' };
+  }
+  saveAuthToken({ token: data.token, expiresAt: data.expiresAt });
+  const r2 = await fetchServerState();
+  if (r2.unauth) {
+    updateConnUI();
+    showLogin('登录成功但 token 未被识别，请重试');
+    return { ok: false };
+  }
+  needLogin = false;
+  enterBoard(r2.state);
+  return { ok: true };
+}
+
+/* 采用本地/服务器状态进入看板（boot 与登录成功共用） */
+function enterBoard(serverState) {
+  const local = load();
+  if (serverMode) {
+    state = serverState || local || defaultState();
+    if (!serverState) save(); // 首次连接：把本地数据（或默认模板）灌入服务器
+  } else {
+    state = local || defaultState();
+  }
+  needLogin = false;
+  hideLogin();
+  updateConnUI();
+  render();
+  if (!pollStarted) {
+    pollStarted = true;
+    setInterval(pollServer, 3000);
   }
 }
 
@@ -1270,6 +1412,7 @@ document.addEventListener('scroll', () => {
     ['export-btn', '导出 JSON 备份'],
     ['import-btn', '导入 JSON 备份'],
     ['ai-btn', 'AI 说明'],
+    ['logout-btn', '退出登录'],
   ];
   const menu = document.createElement('div');
   menu.className = 'ctx-menu';
@@ -1548,6 +1691,7 @@ document.addEventListener('click', e => {
 
 /* 全局快捷键：Ctrl+K / “/” 聚焦搜索；↑↓ / j k 卡片间移动；Enter 打开详情 */
 document.addEventListener('keydown', e => {
+  if (needLogin) return; // 登录界面显示时屏蔽看板快捷键
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault();
     searchInput.focus();
@@ -1745,9 +1889,10 @@ function buildAiHelpText() {
   const base = location.origin;
   return `# 任务看板（Kanban）操作说明
 
-这是一个任务看板服务，数据为列 → 任务 → 子项。请按以下任一方式读写（三选一，方式一优先）。
+这是一个任务看板服务，数据为列 → 任务 → 子项。服务已开启鉴权，按以下任一方式读写（三选一，方式一优先）。
 
 看板地址：${base}
+鉴权 token：${AI_TOKEN}
 
 ## 方式一：MCP（支持 MCP 的客户端首选）
 在 MCP 客户端配置中加入（mcpServers）：
@@ -1755,13 +1900,13 @@ function buildAiHelpText() {
   "kanban": {
     "command": "node",
     "args": ["/opt/kanban/mcp/server.js"],
-    "env": { "KANBAN_URL": "${base}" }
+    "env": { "KANBAN_URL": "${base}", "KANBAN_TOKEN": "${AI_TOKEN}" }
   }
 }
 可用工具：board_digest（看板概览，读板首选）/ board_search / list_tasks / create_column / rename_column / delete_column / create_task / update_task / delete_task / restore_task / add_subtask / update_subtask / delete_subtask
 
 ## 方式二：CLI（终端 agent / 脚本）
-KANBAN_URL=${base} node kanban.js <命令> [参数] [--json]
+KANBAN_URL=${base} KANBAN_TOKEN=${AI_TOKEN} node kanban.js <命令> [参数] [--json]
   digest                          看板概览
   search <关键词>                  搜索任务/子项
   tasks [--col <列ID>]             任务完整列表（含子项）
@@ -1777,7 +1922,9 @@ KANBAN_URL=${base} node kanban.js <命令> [参数] [--json]
   sub <子项ID> done|undone|del [--title] [--assignee]
 
 ## 方式三：REST API（${base}，JSON，/ai/ 前缀）
-GET    /ai/health                 健康检查
+除 /ai/health 外，所有请求都带请求头：Authorization: Bearer ${AI_TOKEN}
+（等价请求头：x-kanban-token: ${AI_TOKEN}）
+GET    /ai/health                 健康检查（免鉴权）
 GET    /ai/digest                 看板概览（列/任务/进度/逾期/统计，读板首选）
 GET    /ai/search?q=关键词         搜索任务与子项（多词空格分隔，全部需命中）
 GET    /ai/columns                列列表（含任务数）
@@ -1953,6 +2100,8 @@ window.addEventListener('pagehide', () => {
     xhr.open('PUT', '/api/state', false);
     xhr.setRequestHeader('content-type', 'application/json');
     xhr.setRequestHeader('if-match', String(serverUpdatedAt));
+    const ah = authHeaderObj();
+    for (const k of Object.keys(ah)) xhr.setRequestHeader(k, ah[k]);
     xhr.send(JSON.stringify(state));
     if (xhr.status === 200) {
       const d = JSON.parse(xhr.responseText);
@@ -1964,17 +2113,15 @@ window.addEventListener('pagehide', () => {
 /* ================= boot ================= */
 
 async function boot() {
-  const serverState = await initFromServer();
-  const local = load();
-  if (serverMode) {
-    state = serverState || local || defaultState();
-    if (!serverState) save(); // 首次连接：把本地数据（或默认模板）灌入服务器
-  } else {
-    state = local || defaultState();
+  authToken = loadAuthToken();
+  const r = await fetchServerState();
+  if (r.unauth) {
+    needLogin = true;
+    updateConnUI();
+    showLogin();
+    return; // 等待用户登录（doLogin → enterBoard）
   }
-  updateConnUI();
-  render();
-  setInterval(pollServer, 3000);
+  enterBoard(r.state);
 }
 
 boot();
