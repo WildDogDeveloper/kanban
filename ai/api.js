@@ -192,6 +192,7 @@ module.exports = {
       const overdueCount = columns.reduce((n, c) => n + c.tasks.filter(t => t.overdue).length, 0);
       return {
         updatedAt: row ? row.updated_at : 0,
+        today,
         totals: {
           columns: state.columns.length,
           tasks: active.length,
